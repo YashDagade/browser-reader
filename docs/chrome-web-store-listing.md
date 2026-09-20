@@ -1,14 +1,14 @@
-# Chrome Web Store submission draft
+# Chrome Web Store submission
 
-**Target version: 0.4.0. Status: not submitted, approved, or published.** The publisher dashboard step is pending. This file supplies listing text, disclosure rationale, and reviewer instructions; it is not evidence of store acceptance. Match the uploaded package and final Options UI to this draft before submission. The publisher's account address is intentionally absent from public source.
+**Submitted version: 0.4.0. Status on September 20, 2026: submitted for review; not yet approved or publicly available.** The dashboard confirmed "Your extension was submitted for review" after contact-email verification. Automatic publication after approval is enabled, with public distribution in all available regions. The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. This file records listing text, disclosure rationale, and reviewer instructions; submission is not evidence of store acceptance. The publisher's account address is intentionally absent from public source.
 
 ## Listing fields
 
-| Field | Draft value |
+| Field | Submitted value |
 | --- | --- |
 | Name | Hermes · Article Reader |
-| Summary | Read articles aloud with word highlighting, natural voices, and adjustable speed. Your page, your pace. |
-| Suggested category | Productivity; choose the matching available category in the dashboard |
+| Summary | Your articles, at your pace. Fast speech, word highlighting, and a quiet floating player. |
+| Category | Accessibility |
 | Language | English |
 | Website | [Project homepage](https://github.com/YashDagade/browser-reader) |
 | Support | [Issue tracker](https://github.com/YashDagade/browser-reader/issues) |

@@ -13,7 +13,7 @@ Click **Start reading**, follow the highlighted words, and change speed from **0
 
 ## Install and listen
 
-Requires **desktop Chrome 116+**. Chrome Web Store submission is being prepared; Hermes is not yet submitted or published there. Install the unpacked extension below. Chrome extensions do not run on iPhone or iPad, even in desktop mode; a Safari version would require a separate port. See [Google's device compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en).
+Requires **desktop Chrome 116+**. Version **0.4.0 was submitted to the Chrome Web Store on September 20, 2026**, with automatic publication enabled after approval. It is awaiting review and is not yet publicly available there. Install the unpacked extension below. Chrome extensions do not run on iPhone or iPad, even in desktop mode; a Safari version would require a separate port. See [Google's device compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en).
 
 1. [Download `hermes-extension.zip`](https://github.com/YashDagade/browser-reader/releases/latest/download/hermes-extension.zip) and extract it to a folder you will keep.
 2. Open `chrome://extensions` and enable **Developer mode**.
