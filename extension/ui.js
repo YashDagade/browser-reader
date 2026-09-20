@@ -29,7 +29,7 @@
     const host = document.createElement('div');
     host.id = 'browser-reader-root';
     host.style.cssText = 'all:initial;position:fixed;z-index:2147483647;display:block;pointer-events:none;color-scheme:dark;';
-    const root = host.attachShadow({ mode: 'open' });
+    const root = host.attachShadow({ mode: 'closed' });
     root.innerHTML = `
       <style>
         *, *::before, *::after { box-sizing: border-box; }
@@ -187,6 +187,12 @@
     let lastAnnouncement = '', lastVoiceModel = '', suppressPointerClickUntil = 0;
     const isVertical = () => layout.dock === 'left' || layout.dock === 'right';
     const emit = (action, payload) => { if (!destroyed) onAction(action, payload); };
+    // Guard every action independently of shadow encapsulation. Browser-owned
+    // trust cannot be forged with click() or dispatchEvent().
+    const listen = (target, type, handler, options) => target.addEventListener(type, event => {
+      if (!event.isTrusted || destroyed) return;
+      handler(event);
+    }, options);
 
     function panelPosition() {
       const viewportWidth = window.innerWidth, viewportHeight = window.innerHeight;
@@ -347,6 +353,7 @@
     }
 
     function endDrag(event) {
+      if (event && !event.isTrusted) return;
       if (!drag || (event && event.pointerId !== drag.pointerId)) return;
       const moved = drag.moved;
       const wasOrb = drag.target === elements.orb;
@@ -373,7 +380,7 @@
     }
 
     function moveDrag(event) {
-      if (!drag || event.pointerId !== drag.pointerId) return;
+      if (!event.isTrusted || !drag || event.pointerId !== drag.pointerId) return;
       const dx = event.clientX - drag.startX, dy = event.clientY - drag.startY;
       if (!drag.moved && Math.hypot(dx, dy) < 4) return;
       event.preventDefault();
@@ -384,7 +391,7 @@
     }
 
     function beginDrag(event) {
-      if (event.button !== 0 || destroyed) return;
+      if (!event.isTrusted || event.button !== 0 || destroyed) return;
       suppressOrbClick = false;
       drag = { pointerId: event.pointerId, target: event.currentTarget, startX: event.clientX, startY: event.clientY, x: layout.x, y: layout.y, moved: false };
       event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -394,20 +401,20 @@
       window.addEventListener('pointercancel', endDrag);
     }
 
-    elements.primary.addEventListener('click', () => emit(state.status === 'playing' || state.status === 'loading' ? 'pause' : 'play'));
-    elements.previous.addEventListener('click', () => emit('previous'));
-    elements.next.addEventListener('click', () => emit('next'));
-    elements.stop.addEventListener('click', () => emit('stop'));
-    get('.close').addEventListener('click', () => emit('close'));
-    get('.collapse').addEventListener('click', () => { setDrawer(false); changeLayout({ collapsed: true }); elements.orb.focus(); });
-    elements.orb.addEventListener('click', () => {
+    listen(elements.primary, 'click', () => emit(state.status === 'playing' || state.status === 'loading' ? 'pause' : 'play'));
+    listen(elements.previous, 'click', () => emit('previous'));
+    listen(elements.next, 'click', () => emit('next'));
+    listen(elements.stop, 'click', () => emit('stop'));
+    listen(get('.close'), 'click', () => emit('close'));
+    listen(get('.collapse'), 'click', () => { setDrawer(false); changeLayout({ collapsed: true }); elements.orb.focus(); });
+    listen(elements.orb, 'click', () => {
       if (suppressOrbClick) { suppressOrbClick = false; return; }
       changeLayout({ collapsed: false });
       elements.primary.focus();
     });
     for (const handle of [get('.drag'), elements.orb]) {
-      handle.addEventListener('pointerdown', beginDrag);
-      handle.addEventListener('keydown', event => {
+      listen(handle, 'pointerdown', beginDrag);
+      listen(handle, 'keydown', event => {
         const directions = { ArrowLeft: [-24, 0], ArrowRight: [24, 0], ArrowUp: [0, -24], ArrowDown: [0, 24] };
         const direction = directions[event.key];
         if (!direction) return;
@@ -415,37 +422,37 @@
         changeLayout({ dock: 'free', x: layout.x + direction[0], y: layout.y + direction[1] });
       });
     }
-    root.querySelectorAll('.dock-button').forEach(button => button.addEventListener('click', () => {
+    root.querySelectorAll('.dock-button').forEach(button => listen(button, 'click', () => {
       const dock = button.dataset.dock;
       changeLayout(dock === 'left' || dock === 'right' ? { dock, y: 80 } : { dock, x: undefined, y: undefined });
     }));
-    elements.settingsToggle.addEventListener('click', () => setDrawer(!drawerOpen));
-    elements.speedToggle.addEventListener('click', () => changeSettings({ speed: nextSpeed(state.speed) }));
-    get('.drawer-dismiss').addEventListener('click', () => { setDrawer(false); elements.settingsToggle.focus(); });
-    get('.advanced').addEventListener('toggle', () => { if (drawerOpen) panelPosition(); });
-    elements.speed.addEventListener('input', () => changeSettings({ speed: Number(elements.speed.value) }));
-    elements.model.addEventListener('change', () => {
+    listen(elements.settingsToggle, 'click', () => setDrawer(!drawerOpen));
+    listen(elements.speedToggle, 'click', () => changeSettings({ speed: nextSpeed(state.speed) }));
+    listen(get('.drawer-dismiss'), 'click', () => { setDrawer(false); elements.settingsToggle.focus(); });
+    listen(get('.advanced'), 'toggle', () => { if (drawerOpen) panelPosition(); });
+    listen(elements.speed, 'input', () => changeSettings({ speed: Number(elements.speed.value) }));
+    listen(elements.model, 'change', () => {
       const model = elements.model.value;
       const changes = { model };
       if (model.startsWith('tts-1') && !LEGACY_VOICES.includes(state.voice)) changes.voice = 'alloy';
       changeSettings(changes);
       panelPosition();
     });
-    elements.voice.addEventListener('change', () => changeSettings({ voice: elements.voice.value }));
-    elements.follow.addEventListener('change', () => changeSettings({ follow: elements.follow.checked }));
-    elements.sync.addEventListener('change', () => changeSettings({ syncMode: elements.sync.checked ? 'precise' : 'estimated' }));
-    elements.instructions.addEventListener('input', () => {
+    listen(elements.voice, 'change', () => changeSettings({ voice: elements.voice.value }));
+    listen(elements.follow, 'change', () => changeSettings({ follow: elements.follow.checked }));
+    listen(elements.sync, 'change', () => changeSettings({ syncMode: elements.sync.checked ? 'precise' : 'estimated' }));
+    listen(elements.instructions, 'input', () => {
       elements.instructions.value = elements.instructions.value.slice(0, 1000);
       elements.promptCount.textContent = `${elements.instructions.value.length} / 1000`;
     });
-    elements.instructions.addEventListener('change', () => {
+    listen(elements.instructions, 'change', () => {
       const instructions = elements.instructions.value.slice(0, 1000);
       if (instructions !== state.instructions) changeSettings({ instructions });
     });
-    elements.progress.addEventListener('pointerdown', () => { seeking = true; });
-    elements.progress.addEventListener('pointerup', () => { seeking = false; });
-    elements.progress.addEventListener('input', () => { seeking = true; renderPosition(Number(elements.progress.value), true); });
-    elements.progress.addEventListener('change', () => {
+    listen(elements.progress, 'pointerdown', () => { seeking = true; });
+    listen(elements.progress, 'pointerup', () => { seeking = false; });
+    listen(elements.progress, 'input', () => { seeking = true; renderPosition(Number(elements.progress.value), true); });
+    listen(elements.progress, 'change', () => {
       const wordIndex = Number(elements.progress.value);
       seeking = false;
       state.wordIndex = wordIndex;
@@ -453,9 +460,9 @@
       renderPosition(wordIndex);
       emit('seek', { wordIndex });
     });
-    elements.progress.addEventListener('pointercancel', () => { seeking = false; renderPosition(state.wordIndex); });
-    elements.progress.addEventListener('blur', () => { seeking = false; });
-    elements.pasteToggle.addEventListener('click', () => {
+    listen(elements.progress, 'pointercancel', () => { seeking = false; renderPosition(state.wordIndex); });
+    listen(elements.progress, 'blur', () => { seeking = false; });
+    listen(elements.pasteToggle, 'click', () => {
       const open = elements.paste.hidden;
       elements.paste.hidden = !open;
       elements.pasteToggle.setAttribute('aria-expanded', String(open));
@@ -463,14 +470,14 @@
       panelPosition();
       if (open) elements.text.focus();
     });
-    elements.text.addEventListener('input', () => { elements.pasteAction.disabled = !elements.text.value.trim(); });
-    elements.pasteAction.addEventListener('click', () => {
+    listen(elements.text, 'input', () => { elements.pasteAction.disabled = !elements.text.value.trim(); });
+    listen(elements.pasteAction, 'click', () => {
       const text = elements.text.value.trim();
       if (!text) return;
       emit('paste', { text });
       setDrawer(false);
     });
-    root.addEventListener('keydown', event => {
+    listen(root, 'keydown', event => {
       // Website shortcuts must not capture typing or arrow keys inside the player.
       event.stopPropagation();
       if (event.key === 'Escape' && drawerOpen) {
@@ -479,7 +486,7 @@
         elements.settingsToggle.focus();
       }
     });
-    root.addEventListener('click', event => {
+    listen(root, 'click', event => {
       // A drop must not activate a control that moved beneath the pointer.
       if (event.detail > 0 && performance.now() < suppressPointerClickUntil) {
         event.preventDefault();
@@ -487,8 +494,8 @@
         suppressOrbClick = false;
       }
     }, true);
-    host.addEventListener('click', event => event.stopPropagation());
-    const resize = () => { if (!destroyed) applyLayout(); };
+    listen(host, 'click', event => event.stopPropagation());
+    const resize = event => { if (event.isTrusted && !destroyed) applyLayout(); };
     window.addEventListener('resize', resize, { passive: true });
     render();
     document.documentElement.appendChild(host);

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
+import {webcrypto} from 'node:crypto';
+const sessionSource = await readFile(new URL('../extension/session-data.js', import.meta.url), 'utf8');
 
 const source = await readFile(new URL('../extension/background.js', import.meta.url), 'utf8');
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -23,8 +25,8 @@ function harness() {
     alarms:{create:()=>{},clear:async()=>{},onAlarm:event('alarm')},
     permissions:{contains:async()=>true},
     storage: {
-      session: {get:async key=>clone(Object.fromEntries([].concat(key).map(k=>[k,saved[k]]))),set:async value=>Object.assign(saved,clone(value)),remove:async key=>{for(const k of [].concat(key))delete saved[k];}},
-      local:{get:async key=>({[key]:local[key]}),set:async value=>Object.assign(local,clone(value)),setAccessLevel:async value=>{accesses.push(value);}},
+      session: {setAccessLevel:async()=>{},get:async key=>clone(Object.fromEntries([].concat(key).map(k=>[k,saved[k]]))),set:async value=>Object.assign(saved,clone(value)),remove:async key=>{for(const k of [].concat(key))delete saved[k];}},
+      local:{get:async key=>clone(Object.fromEntries([].concat(key).map(k=>[k,local[k]]))),set:async value=>Object.assign(local,clone(value)),setAccessLevel:async value=>{accesses.push(value);}},
     },
     tabs: {
       sendMessage: async (tabId, message) => { messages.push({ tabId, ...clone(message) });if(message.type==='hermes-probe')return documentAlive?{sessionId:message.sessionId}:undefined; },
@@ -39,8 +41,8 @@ function harness() {
     commands: { onCommand: event('command') },
     contextMenus: { onClicked: event('context') },
   };
-  const restartWorker = () => vm.runInNewContext(source, {
-    chrome, clearInterval, setInterval, AbortSignal, importScripts:()=>{}, HermesSpeech:{health:async()=>({configured:true,mode:'direct',running:true})},
+  const restartWorker = () => vm.runInNewContext(sessionSource+'\n'+source, {
+    chrome, crypto:webcrypto, clearInterval, setInterval, AbortSignal, importScripts:()=>{}, HermesSpeech:{health:async()=>({configured:true,mode:'direct',running:true})},
     fetch: async () => ({ json: async () => ({ configured: true }) }),
   });
   restartWorker();
@@ -208,4 +210,21 @@ test('reconnecting an article restores its position without audio generation unt
   await app.command('load',{article,settings:article.settings,wordIndex:5});
   assert.equal(app.saved.current.state.wordIndex,5);assert.equal(app.hasOffscreen(),false);
   await app.command('play');assert.equal(app.audio.at(-2).wordIndex,5);
+});
+test('key, cipher and private-setting routes reject content scripts and ordinary pages',async()=>{
+ const app=harness();
+ for(const type of ['connection-internal','audio-key-internal','connection-manage','preferences-save']) {
+  assert.match((await app.message(type,{action:'save',connection:{mode:'local',consent:true}})).error,/Not permitted/);
+  assert.match((await app.message(type,{}, {url:'https://article.example/options.html'})).error,/Not permitted/);
+ }
+ const options={url:'chrome-extension://hermes/options.html?restricted=1',tab:{id:99}};
+ const view=await app.message('connection-manage',{action:'get'},options);
+ assert.equal(view.connection.hasKey,true);assert.equal(view.connection.apiKey,undefined);
+ assert.equal(app.local.hermesConnection.apiKey,undefined);
+ const internal={url:'chrome-extension://hermes/offscreen.html'};
+ const first=await app.message('audio-key-internal',{},internal);
+ assert.equal(first.cipher.key.length,32);
+ app.restartWorker();
+ assert.equal(JSON.stringify((await app.message('audio-key-internal',{},internal)).cipher),JSON.stringify(first.cipher));
+ assert.ok((await app.message('preferences',{},options)).settings);
 });

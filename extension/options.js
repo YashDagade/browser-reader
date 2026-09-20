@@ -3,6 +3,11 @@ const model = $('#model');
 const voice = $('#voice');
 const mode = $('#connection-mode');
 let importedKey = '';
+async function background(type, values = {}) {
+  const response = await chrome.runtime.sendMessage({target: 'background', type, ...values});
+  if (!response || response.error) throw Error(response?.error || 'The reader is unavailable. Reload setup and try again.');
+  return response;
+}
 const legacyVoices = new Set(['alloy', 'ash', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer']);
 function voiceOptions() {
   const legacy = model.value === 'tts-1' || model.value === 'tts-1-hd';
@@ -15,17 +20,19 @@ function connectionFields() {
   $('#local-fields').hidden = mode.value === 'direct';
 }
 async function initialize() {
-  const {settings = {}, hermesConnection = {mode: 'local'}} = await chrome.storage.local.get(['settings', 'hermesConnection']);
+  const [{settings = {}}, {connection}] = await Promise.all([background('preferences'), background('connection-manage', {action: 'get'})]);
   model.value = settings.model || 'local'; voice.value = settings.voice || 'alloy';
   $('#instructions').value = settings.instructions || ''; $('#sync-mode').value = settings.syncMode || 'precise';
-  mode.value = hermesConnection.mode || 'local'; $('#forget').hidden = !hermesConnection.apiKey;
+  mode.value = connection.mode; $('#forget').hidden = !connection.hasKey && !connection.consent;
+  $('#cloud-consent').checked = connection.consent === true;
   connectionFields(); voiceOptions(); await Promise.all([check(), showCache()]);
 }
 async function savePreferences() {
   voiceOptions();
-  const {settings = {}} = await chrome.storage.local.get('settings');
-  await chrome.storage.local.set({settings: {...settings, model: model.value, voice: voice.value, instructions: $('#instructions').value.trim().slice(0, 1000), syncMode: $('#sync-mode').value}});
-  $('#saved').textContent = 'Saved. Applies the next time you open a reader.';
+  try {
+    await background('preferences-save', {settings: {model: model.value, voice: voice.value, instructions: $('#instructions').value.trim().slice(0, 1000), syncMode: $('#sync-mode').value}});
+    $('#saved').textContent = 'Saved. Applies the next time you open a reader. Custom guidance lasts until Chrome quits.';
+  } catch (error) { $('#saved').textContent = error.message; }
 }
 for (const element of [model, voice, $('#instructions'), $('#sync-mode')]) element.addEventListener('change', savePreferences);
 mode.addEventListener('change', connectionFields);
@@ -38,7 +45,7 @@ $('#key-file').addEventListener('change', async event => {
     const value = match?.[1] || text.trim();
     if (!/^sk-[A-Za-z0-9_-]{16,}$/.test(value)) throw Error('No OpenAI API key was found in this file.');
     importedKey = value; $('#api-key').value = '';
-    $('#import-status').textContent = 'Key read locally. Click Save connection to store it in this Chrome profile.';
+    $('#import-status').textContent = 'Key read locally. Click Save connection to keep it in memory until Chrome quits.';
   } catch (error) { $('#import-status').textContent = error.message; }
   event.target.value = '';
 });
@@ -46,33 +53,38 @@ $('#api-key').addEventListener('input', () => { importedKey = ''; $('#import-sta
 $('#save-connection').addEventListener('click', async () => {
   const status = $('#connection-saved'); status.textContent = '';
   try {
+    if (!$('#cloud-consent').checked) {
+      status.textContent = 'Review and accept the OpenAI disclosure before saving.'; return;
+    }
     // The optional API permission is requested only by this deliberate user gesture.
     if (mode.value === 'direct' && !await chrome.permissions.request({origins: ['https://api.openai.com/*']})) {
       status.textContent = 'OpenAI permission was not granted. Your connection is unchanged.'; return;
     }
-    const {hermesConnection = {}} = await chrome.storage.local.get('hermesConnection');
-    const candidate = $('#api-key').value.trim() || importedKey || hermesConnection.apiKey || '';
-    if (mode.value === 'direct' && !/^sk-[A-Za-z0-9_-]{16,}$/.test(candidate)) {
-      status.textContent = 'Import or paste a valid OpenAI API key first.'; return;
-    }
-    const savedKey = mode.value === 'direct' ? candidate : hermesConnection.apiKey;
-    await chrome.storage.local.set({hermesConnection: {mode: mode.value, ...(savedKey ? {apiKey: savedKey} : {})}});
+    const {connection} = await background('connection-manage', {action: 'save', connection: {
+      mode: mode.value, apiKey: mode.value === 'direct' ? $('#api-key').value.trim() || importedKey : undefined, consent: true,
+    }});
     importedKey = ''; $('#api-key').value = ''; $('#import-status').textContent = '';
-    $('#forget').hidden = !savedKey;
-    status.textContent = mode.value === 'direct' ? 'Saved in this Chrome profile. No local helper is required.' : 'Local helper selected.';
+    $('#forget').hidden = !connection.hasKey && !connection.consent;
+    status.textContent = mode.value === 'direct' ? 'Key kept in memory until Chrome quits. No local helper is required.' : 'Local helper selected.';
     await check();
-  } catch { status.textContent = 'Could not save the connection. Please try again.'; }
+  } catch (error) { status.textContent = error.message; }
 });
 $('#forget').addEventListener('click', async () => {
-  await chrome.storage.local.set({hermesConnection: {mode: mode.value}});
+  await background('connection-manage', {action: 'forget'});
   await chrome.permissions.remove({origins: ['https://api.openai.com/*']});
   importedKey = ''; $('#api-key').value = ''; $('#key-file').value = ''; $('#import-status').textContent = '';
-  $('#forget').hidden = true; $('#connection-saved').textContent = 'The saved key was removed from this Chrome profile.'; await check();
+  $('#cloud-consent').checked = false;
+  $('#forget').hidden = true; $('#connection-saved').textContent = 'The key was removed from memory and OpenAI consent was reset.'; await check();
 });
 async function check() {
   const state = await HermesSpeech.health();
+  const {connection} = await background('connection-manage', {action: 'get'});
   $('#connection').textContent = state.configured ? state.mode === 'direct' ? 'OpenAI direct connection is ready' : 'OpenAI local connection is ready' : state.running && state.mode === 'direct' ? 'Add your OpenAI key' : state.running ? 'Local helper ready · API key needed' : 'On-device reading is ready';
   $('#detail').textContent = state.configured ? state.mode === 'direct' ? 'Hermes is configured to call OpenAI from Chrome. Your key is checked when you first play audio.' : 'Open an article and choose an OpenAI voice in the player.' : state.mode === 'direct' ? 'Import or paste your own API key below, then save the connection.' : 'The on-device voice works immediately. Select a connection below to enable OpenAI voices.';
+  if (state.configured && !connection.consent) {
+    $('#connection').textContent = 'Review OpenAI data sharing';
+    $('#detail').textContent = 'Review the disclosure below, check the consent box, and save before using an OpenAI voice. On-device reading remains available.';
+  }
   if (new URLSearchParams(location.search).has('restricted')) $('#detail').textContent += ' This Chrome page cannot run the reader. Try a regular article webpage.';
 }
 $('#check').addEventListener('click', check);

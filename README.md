@@ -13,7 +13,7 @@ Click **Start reading**, follow the highlighted words, and change speed from **0
 
 ## Install and listen
 
-Requires **Chrome 116+**. This is an unpacked extension, not a Chrome Web Store listing.
+Requires **desktop Chrome 116+**. Chrome Web Store submission is being prepared; Hermes is not yet submitted or published there. Install the unpacked extension below. Chrome extensions do not run on iPhone or iPad, even in desktop mode; a Safari version would require a separate port. See [Google's device compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en).
 
 1. [Download `hermes-extension.zip`](https://github.com/YashDagade/browser-reader/releases/latest/download/hermes-extension.zip) and extract it to a folder you will keep.
 2. Open `chrome://extensions` and enable **Developer mode**.
@@ -28,10 +28,10 @@ You can also [clone the repository](https://github.com/YashDagade/browser-reader
 1. Right-click Hermes in Chrome's toolbar and open **Options**.
 2. Under **How to connect**, choose **Direct from Chrome · no Node or server**.
 3. Enter your own OpenAI API key, or import a local `.env.local` file containing `OPENAI_API_KEY`. The file is read locally and is not uploaded.
-4. Click **Save connection** and allow the optional permission to access `api.openai.com`.
+4. Read the OpenAI data-sharing disclosure, check the consent box, and click **Save connection**. Allow the optional permission to access `api.openai.com`.
 5. Choose **OpenAI · expressive** and a voice in the player. Try Alloy, Cedar, or Nova.
 
-**The direct-mode key is stored unencrypted in local Chrome storage.** Only trusted extension contexts can access it; it is never synced or sent to webpage content scripts. Protect your Chrome profile. **Forget saved key** removes it and the OpenAI permission. The first speech request verifies the key.
+**The direct-mode key and custom voice instructions stay in browser-session memory.** They are not saved to disk or synced and must be supplied again after Chrome fully quits. The key is restricted to trusted extension contexts and never sent to webpage content scripts. **Disconnect OpenAI** removes it, resets consent, and removes the optional API permission. The first speech request verifies the key with OpenAI.
 
 For file-based setup, create a file named `.env.local` on your computer with one line: `OPENAI_API_KEY=your_own_key_here` (replace the placeholder locally). If you cloned the repository, copy `.env.example` to `.env.local` first. Import that private file in Options; do not put the key in extension source files.
 
@@ -45,7 +45,7 @@ To keep the key outside Chrome, clone the full repository, install **Node.js 22+
 npm start
 ```
 
-Choose **Local helper** in Options and save. The helper needs no dependency installation and listens only on `127.0.0.1:43123`; leave it running. On macOS, use `Start Hermes.command` or install startup at login with `npm run service:install` after stopping any terminal instance. `npm run service:restart` reloads a changed key; `npm run service:uninstall` removes background startup.
+Choose **Local helper** in Options, review and accept the same OpenAI data-sharing disclosure, and save. The helper needs no dependency installation and listens only on `127.0.0.1:43123`; leave it running. On macOS, use `Start Hermes.command` or install startup at login with `npm run service:install` after stopping any terminal instance. `npm run service:restart` reloads a changed key; `npm run service:uninstall` removes background startup. Your private environment file remains on your computer and is never included in extension packages.
 
 Install the extension separately in each Chrome profile. Direct keys and preferences stay separate per profile; multiple profiles can share one local helper. Each profile has one active reading session.
 
@@ -73,13 +73,13 @@ Dropping near the left or right edge makes the toolbar vertical; top and bottom 
 
 ## Privacy and limits
 
-Hermes runs on the active tab only when invoked, with no analytics. OpenAI receives current and prefetched text, plus generated audio for improved timing; page HTML, cookies, and browsing history are not sent. Browser mode requires an installed, non-remote voice.
+Hermes runs on the active tab only when invoked, with no analytics, ads, or developer-operated data service. Browser mode uses an installed, non-remote voice and sends nothing to OpenAI. With your explicit consent, OpenAI receives current and prefetched text, applicable voice guidance, and generated audio for improved timing. Page title and URL are held temporarily on your device to manage the reading session; they are not sent as API metadata. Text you choose to read may itself contain sensitive information or URLs.
 
-Hermes keeps up to **12 MiB** of audio in memory and saves completed audio in the extension's local IndexedDB cache: up to **32 MiB**, **256 entries**, and **seven days** of reuse. Saved speech and completed word alignment can survive closing and reopening the reader, avoiding repeat API work until eviction. The cache stores audio, numeric timings, and hashed identifiers, not API keys, plaintext source text, or article URLs. The audio itself contains the narrated content. Remove saved entries with **Clear saved audio** in Options.
+Hermes keeps up to **12 MiB** of audio in memory and encrypts completed audio and timings with **AES-256-GCM** before storing them in IndexedDB. Saved audio has a **32 MiB** budget, **256-entry** limit, and **seven-day maximum lifetime**, plus encryption and metadata overhead. The encryption key exists only in browser-session memory. Audio can be reused after closing and reopening the reader within that session, but not after Chrome restarts. The cache contains no API keys or plaintext source text/URLs. Earlier plaintext cache records are purged on upgrade. **Clear saved audio** in Options removes the encrypted cache.
 
 The audio document is created when needed and released on stop/close or after three idle minutes. Hermes does not poll playback while idle. The optional helper separately holds a **16 MiB** memory cache with a ten-minute expiry. Cache limits are not total RAM limits; saved audio may also be evicted by Chrome.
 
-Environment and common credential files are Git-ignored; no key is bundled in the source or extension ZIP. The helper rejects website origins and supports an optional extension-ID allowlist. See [security and data flow](docs/architecture.md#credentials-and-request-boundaries).
+Environment and common credential files are Git-ignored; no key is bundled in the source or extension ZIP. The helper rejects website origins and supports an optional extension-ID allowlist. See the [privacy policy](PRIVACY.md) and [security and data flow](docs/architecture.md#credentials-and-request-boundaries).
 
 OpenAI needs an initial buffer; fast playback and chunk transitions can cause gaps. Unusual layouts may require selecting or pasting text. Chrome internal pages, the Web Store, and the built-in PDF viewer are unsupported. Hermes does not bypass paywalls or reveal collapsed content.
 
@@ -95,14 +95,18 @@ npm run check:secrets
 npm run package
 ```
 
-Plain JavaScript, HTML, and CSS; `jsdom` is development-only. Mocked tests spend no API credits. Packaging writes `output/hermes-extension.zip`. See [the architecture notes](docs/architecture.md). Reproducible contributions are welcome; keep private content and credentials out of issues.
+Plain JavaScript, HTML, and CSS; `jsdom` is development-only. Mocked tests spend no API credits. Packaging checks the exact files for credential patterns and writes `output/hermes-extension.zip` for unpacked installs and `output/hermes-chrome-web-store.zip` with a root manifest for store submission. See the [submission draft and assets](docs/chrome-web-store-listing.md). See [the architecture notes](docs/architecture.md). Reproducible contributions are welcome; keep private content and credentials out of issues.
 
 Licensed under [MIT](LICENSE).
 
 ## Demo
 
+![Hermes 0.4.0 reading an original essay, with live word highlighting](docs/store/screenshot-reading.png)
+
+Current interface, captured in Chrome with on-device speech.
+
 [![Hermes: a movable Chrome reader with highlighting, voice controls, and adjustable speed](docs/demo-poster.png)](docs/hermes-demo.mp4)
 
-[Watch the v0.2.0 walkthrough (MP4)](docs/hermes-demo.mp4). This silent, captioned demo shows the earlier interface. In v0.3.0, word seeking uses a double-click, the toolbar speed button cycles rates directly, and dropping near an edge docks the player.
+[Watch the v0.2.0 walkthrough (MP4)](docs/hermes-demo.mp4). This silent, captioned demo shows an earlier interface and setup flow. Current versions use double-click word seeking, direct speed cycling, edge docking, explicit OpenAI consent, and session-only credentials.
 
 Hermes keeps the article in place and adds a player you can move out of the way. Text extraction runs locally, short audio chunks keep playback responsive, and speed changes happen in the player. Use OpenAI for expressive voices or an installed browser voice for local speech. To try the sample article, run `npm run demo` from the full repository and open the local address printed in the terminal.

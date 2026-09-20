@@ -142,7 +142,7 @@
     }
   });
   document.addEventListener('dblclick',event=>{
-    if(closed || !article || event.defaultPrevented || event.button!==0 || event.metaKey || event.ctrlKey) return;
+    if(!event.isTrusted || closed || !article || event.defaultPrevented || event.button!==0 || event.metaKey || event.ctrlKey) return;
     if(event.composedPath().includes(ui?.host) || event.target.closest?.('a,button,input,textarea,select,[contenteditable=true]')) return;
     const point=document.caretRangeFromPoint?.(event.clientX,event.clientY);
     if(!point) return;
@@ -157,15 +157,15 @@
     if(index>=0) {event.preventDefault();manualScrollUntil=0;onAction('seek',{wordIndex:index});}
   });
   document.addEventListener('keydown',event=>{
-    if(closed || event.target.closest?.('input,textarea,select,[contenteditable=true]') || event.composedPath().includes(ui?.host)) return;
+    if(!event.isTrusted || closed || event.target.closest?.('input,textarea,select,[contenteditable=true]') || event.composedPath().includes(ui?.host)) return;
     if(event.altKey && event.code==='Space') { event.preventDefault();onAction(state.status==='playing'?'pause':'play'); }
     if(event.key==='Escape' && !event.ctrlKey && !event.metaKey) onAction('pause');
   });
-  addEventListener('pagehide',()=>{if(sessionId)send('close').catch(()=>{});ui?.destroy();ui=null;closed=true;sessionId=null;article=null;clearHighlight();highlightStyle.remove();});
-  const userScrolled=()=>{manualScrollUntil=Date.now()+1200;};
+  addEventListener('pagehide',event=>{if(!event.isTrusted)return;if(sessionId)send('close').catch(()=>{});ui?.destroy();ui=null;closed=true;sessionId=null;article=null;clearHighlight();highlightStyle.remove();});
+  const userScrolled=event=>{if(event.isTrusted)manualScrollUntil=Date.now()+1200;};
   document.addEventListener('wheel',userScrolled,{passive:true});
   document.addEventListener('touchmove',userScrolled,{passive:true});
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!closed){lastWord=-1;update({});}});
+  document.addEventListener('visibilitychange',event=>{if(event.isTrusted&&!document.hidden&&!closed){lastWord=-1;update({});}});
   globalThis.__hermesReader={open};
   open();
 })();

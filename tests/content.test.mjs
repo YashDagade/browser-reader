@@ -7,10 +7,44 @@ const source = await readFile(new URL('../extension/content.js', import.meta.url
 const extractor = await readFile(new URL('../extension/extractor.js', import.meta.url), 'utf8');
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
-async function harness(t) {
+// JSDOM cannot produce trusted user events. This harness-only adapter presents
+// browser-trusted delivery to unchanged production listeners; raw-event tests
+// disable it. No production trust checks or source text are rewritten.
+function trustedEventHarness(window, enabled = true) {
+  const control = { enabled };
+  const add = window.EventTarget.prototype.addEventListener;
+  const remove = window.EventTarget.prototype.removeEventListener;
+  const listeners = new WeakMap();
+  const events = new WeakMap();
+  window.EventTarget.prototype.addEventListener = function(type, listener, options) {
+    if (!listener) return add.call(this, type, listener, options);
+    if (!listeners.has(listener)) listeners.set(listener, function(event) {
+      let delivered = event;
+      if (control.enabled) {
+        if (!events.has(event)) events.set(event, new Proxy(event, {
+          get(target, property) {
+            if (property === 'isTrusted') return true;
+            const value = Reflect.get(target, property, target);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        }));
+        delivered = events.get(event);
+      }
+      return typeof listener === 'function' ? listener.call(this, delivered) : listener.handleEvent(delivered);
+    });
+    return add.call(this, type, listeners.get(listener), options);
+  };
+  window.EventTarget.prototype.removeEventListener = function(type, listener, options) {
+    return remove.call(this, type, listeners.get(listener) || listener, options);
+  };
+  return control;
+}
+
+async function harness(t, { trustedEvents = true } = {}) {
   const dom = new JSDOM('<!doctype html><html><body><article><p>These are <em>neuro</em>science words for reading.</p></article></body></html>', {pretendToBeVisual:true, runScripts: 'outside-only', url: 'https://article.example/' });
   t.after(() => dom.window.close());
   const window = dom.window, commands = [], highlights = new Map(), views = [];
+  const trust = trustedEventHarness(window, trustedEvents);
   let listener,respond=()=>({ok:true,configured:true});
   window.CSS = { highlights };
   window.Highlight = class { constructor(range) { this.range = range; } };
@@ -35,7 +69,7 @@ async function harness(t) {
   window.eval(source);
   await flush();
   const state = value => listener({ type: 'hermes-state', sessionId: commands.findLast(command => command.action === 'load').sessionId, state: value }, {}, () => {});
-  return { window, commands, highlights, views, state, setResponder:fn=>{respond=fn;}, probe:()=>new Promise(resolve=>listener({type:'hermes-probe'}, {},resolve)) };
+  return { window, commands, highlights, views, state, trust, setResponder:fn=>{respond=fn;}, probe:()=>new Promise(resolve=>listener({type:'hermes-probe'}, {},resolve)) };
 }
 
 test('double-clicking either inline fragment of a word seeks to that complete word', async t => {
@@ -164,4 +198,43 @@ test('a nested pane at its scroll limit does not prevent scrolling the outer pag
   app.window.scrollBy=value=>outer.push(value);
   app.window.Range.prototype.getBoundingClientRect=()=>({top:960,bottom:985,left:100,right:150});
   app.state({status:'playing',wordIndex:2});assert.equal(inner.length,0);assert.equal(outer.length,1);
+});
+
+test('raw page events cannot invoke keyboard playback, seek, or simulate leaving the page', async t => {
+  const app = await harness(t, { trustedEvents: false });
+  const p = app.window.document.querySelector('p');
+  const caret = app.window.document.createRange();
+  caret.setStart(p.firstChild, 2);
+  caret.collapse(true);
+  app.window.document.caretRangeFromPoint = () => caret;
+  const before = app.commands.length;
+  const updatesBefore = app.views[0].updates.length;
+  p.dispatchEvent(new app.window.MouseEvent('dblclick', { bubbles: true, button: 0 }));
+  p.dispatchEvent(new app.window.KeyboardEvent('keydown', { bubbles: true, altKey: true, code: 'Space' }));
+  p.dispatchEvent(new app.window.KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
+  app.window.dispatchEvent(new app.window.PageTransitionEvent('pagehide', { persisted: true }));
+  app.window.document.dispatchEvent(new app.window.Event('visibilitychange'));
+  await flush();
+  assert.equal(app.commands.length, before);
+  assert.equal(app.views[0].updates.length, updatesBefore);
+  assert.equal(app.views[0].host.isConnected, true);
+});
+
+test('raw wheel and touch events cannot suspend auto-scroll', async t => {
+  const app = await harness(t, { trustedEvents: false });
+  const scrolls = [];
+  let now = 10000;
+  app.window.Date.now = () => now;
+  app.window.scrollBy = value => scrolls.push(value);
+  app.window.Range.prototype.getBoundingClientRect = () => ({ top: 590, bottom: 610, left: 100, right: 150 });
+  app.state({ status: 'playing', wordIndex: 2 });
+  assert.equal(scrolls.length, 1);
+  app.window.document.dispatchEvent(new app.window.WheelEvent('wheel'));
+  now += 500;
+  app.state({ status: 'playing', wordIndex: 3 });
+  assert.equal(scrolls.length, 2);
+  app.window.document.dispatchEvent(new app.window.Event('touchmove'));
+  now += 500;
+  app.state({ status: 'playing', wordIndex: 4 });
+  assert.equal(scrolls.length, 3);
 });

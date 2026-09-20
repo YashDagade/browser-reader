@@ -7,8 +7,13 @@ import { IDBFactory } from 'fake-indexeddb';
 
 const source = await readFile(new URL('../extension/audio-cache.js', import.meta.url), 'utf8');
 const day = 24 * 60 * 60 * 1000;
-function harness(factory = new IDBFactory(), clock = { now: 100 * day }, timers = {}) {
-  const context = { indexedDB: factory, crypto: webcrypto, TextEncoder, Uint8Array, Blob,
+const sessionCipher = { id: 'test-browser-session', key: [...webcrypto.getRandomValues(new Uint8Array(32))] };
+function harness(factory = new IDBFactory(), clock = { now: 100 * day }, timers = {}, session = sessionCipher) {
+  const context = { indexedDB: factory, crypto: webcrypto, TextEncoder, TextDecoder, Uint8Array, ArrayBuffer, DataView, Blob,
+    chrome: { runtime: { sendMessage: async (message) => {
+      assert.equal(message.target, 'background'); assert.equal(message.type, 'audio-key-internal');
+      return session ? { cipher: structuredClone(session) } : {};
+    } } },
     setTimeout, clearTimeout, ...timers, Date: { now: () => clock.now } };
   vm.runInNewContext(source, context);
   return { cache: context.HermesAudioCache, factory, clock };
@@ -30,7 +35,7 @@ test('speech keys ignore speed, follow, layout, sync and credentials while disti
     await cache.keyFor({ ...payload, model: 'tts-1', instructions: 'Two' }));
 });
 
-test('completed audio and numeric timings survive a fresh extension document without saving text or credentials', async () => {
+test('encrypted audio and timings survive a fresh document within the same browser session', async () => {
   const first = harness();
   const key = await first.cache.keyFor(payload);
   const original = record();
@@ -125,4 +130,170 @@ test('stalled IndexedDB transactions time out instead of blocking speech indefin
   const { cache } = harness(factory, { now: 100 * day }, { setTimeout: (callback, delay) => setTimeout(callback, Math.min(delay, 10)) });
   assert.equal(await cache.get('a'.repeat(64)), null);
   assert.equal(aborted, 1);
+});
+
+
+async function rawStore(factory, name, change) {
+  return new Promise((resolve, reject) => {
+    const request = factory.open('hermes-audio-cache', 2);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const database = request.result;
+      const transaction = database.transaction(name, change ? 'readwrite' : 'readonly');
+      const store = transaction.objectStore(name);
+      const records = store.getAll();
+      records.onsuccess = () => { if (change) change(records.result, store); };
+      transaction.oncomplete = () => { database.close(); resolve(records.result); };
+      transaction.onerror = () => { database.close(); reject(transaction.error); };
+    };
+  });
+}
+
+test('IndexedDB contains ciphertext and opaque metadata, never audio blobs, readable timings or encryption keys', async () => {
+  const { cache, factory } = harness();
+  const key = await cache.keyFor(payload);
+  const original = record();
+  await cache.put(key, { ...original, text: payload.text, articleURL: 'https://example.com/private', apiKey: 'example-only' });
+  const [saved] = await rawStore(factory, 'audio');
+  assert.deepEqual(Object.keys(saved).sort(), ['cipherId', 'ciphertext', 'iv', 'key']);
+  assert.ok(saved.ciphertext instanceof ArrayBuffer);
+  assert.equal(saved.iv.byteLength, 12);
+  assert.equal(saved.blob, undefined);
+  assert.equal(saved.duration, undefined);
+  assert.equal(saved.alignedTimings, undefined);
+  assert.equal(saved.estimatedTimings, undefined);
+  const [metadata] = await rawStore(factory, 'metadata');
+  assert.deepEqual(Object.keys(metadata).sort(), ['bytes', 'cipherId', 'createdAt', 'key', 'usedAt']);
+  assert.equal(JSON.stringify(metadata).includes(payload.text), false);
+  assert.equal(JSON.stringify(metadata).includes(sessionCipher.key.join(',')), false);
+  assert.equal(new TextDecoder().decode(saved.ciphertext).includes('estimatedTimings'), false);
+  const restored = await cache.get(key);
+  assert.deepEqual(new Uint8Array(await restored.blob.arrayBuffer()), new Uint8Array(await original.blob.arrayBuffer()));
+  await cache.put(key, original);
+  const [rewritten] = await rawStore(factory, 'audio');
+  assert.notDeepEqual(rewritten.iv, saved.iv, 'each encryption uses a fresh 96-bit IV');
+});
+
+test('a new browser-session key cannot read old audio and maintenance removes its ciphertext', async () => {
+  const first = harness();
+  const key = await first.cache.keyFor(payload);
+  const otherKey = await first.cache.keyFor({ ...payload, text: 'Another private passage' });
+  await first.cache.put(key, record());
+  await first.cache.put(otherKey, record());
+  const nextCipher = { id: 'different-browser-session', key: [...webcrypto.getRandomValues(new Uint8Array(32))] };
+  const second = harness(first.factory, first.clock, {}, nextCipher);
+  assert.equal(await second.cache.get(key), null);
+  assert.equal((await second.cache.stats()).entries, 0);
+  assert.equal((await rawStore(first.factory, 'audio')).length, 0);
+  assert.equal(await second.cache.put(key, record()), true);
+  assert.ok(await second.cache.get(key));
+});
+
+test('tampered ciphertext and mismatched authenticated record identifiers are cache misses', async () => {
+  const { cache, factory } = harness();
+  const key = await cache.keyFor(payload);
+  await cache.put(key, record());
+  await rawStore(factory, 'audio', ([saved], store) => {
+    new Uint8Array(saved.ciphertext)[10] ^= 255;
+    store.put(saved);
+  });
+  assert.equal(await cache.get(key), null);
+  assert.equal((await cache.stats()).entries, 0);
+  await cache.put(key, record());
+  const wrongKey = await cache.keyFor({ ...payload, text: 'Other text' });
+  await rawStore(factory, 'audio', ([saved], store) => store.put({ ...saved, key: wrongKey }));
+  await rawStore(factory, 'metadata', ([saved], store) => store.put({ ...saved, key: wrongKey }));
+  assert.equal(await cache.get(wrongKey), null);
+});
+
+test('a missing session encryption key disables persistent caching without plaintext fallback', async () => {
+  const { cache, factory } = harness(new IDBFactory(), { now: 100 * day }, {}, null);
+  const key = await cache.keyFor(payload);
+  assert.equal(await cache.put(key, record()), false);
+  assert.equal(await cache.get(key), null);
+  assert.equal((await cache.stats()).available, false);
+  assert.equal((await rawStore(factory, 'audio')).length, 0);
+});
+
+test('database version 2 discards legacy plaintext audio before exposing the cache', async () => {
+  const factory = new IDBFactory();
+  await new Promise((resolve, reject) => {
+    const request = factory.open('hermes-audio-cache', 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore('audio', { keyPath: 'key' });
+      request.result.createObjectStore('metadata', { keyPath: 'key' });
+    };
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      const transaction = db.transaction(['audio', 'metadata'], 'readwrite');
+      transaction.objectStore('audio').put({ key: 'a'.repeat(64), ...record() });
+      transaction.objectStore('metadata').put({ key: 'a'.repeat(64), bytes: 100, createdAt: 100 * day, usedAt: 100 * day });
+      transaction.oncomplete = () => { db.close(); resolve(); };
+    };
+  });
+  const unavailable = harness(factory, { now: 100 * day }, {}, null);
+  assert.equal((await unavailable.cache.stats()).available, false);
+  assert.equal((await rawStore(factory, 'audio')).length, 0);
+  const { cache } = harness(factory);
+  assert.equal((await cache.stats()).entries, 0);
+  assert.equal((await rawStore(factory, 'audio')).length, 0);
+  const key = await cache.keyFor(payload);
+  assert.equal(await cache.put(key, record()), true);
+  assert.ok(await cache.get(key));
+});
+
+
+test('queued saves keep newer aligned timings and Clear cancels unfinished encryption writes', async () => {
+  const { cache } = harness();
+  const key = await cache.keyFor(payload);
+  const first = record();
+  delete first.alignedTimings;
+  const writeFirst = cache.put(key, first);
+  const writeSecond = cache.put(key, record());
+  assert.deepEqual(await Promise.all([writeFirst, writeSecond]), [true, true]);
+  assert.deepEqual(Array.from((await cache.get(key)).alignedTimings), record().alignedTimings);
+  const pending = cache.put(key, record());
+  assert.equal(await cache.clear(), true);
+  assert.equal(await pending, false);
+  assert.equal((await cache.stats()).entries, 0);
+});
+
+
+test('the imported AES-256 key is nonextractable and remains usable only for encryption and decryption', async () => {
+  let imported;
+  const subtle = new Proxy(webcrypto.subtle, { get(target, property) {
+    if (property === 'importKey') return async (...args) => { imported = await target.importKey(...args); return imported; };
+    const method = target[property];
+    return typeof method === 'function' ? method.bind(target) : method;
+  } });
+  const crypto = { subtle, getRandomValues: (bytes) => webcrypto.getRandomValues(bytes) };
+  const { cache } = harness(new IDBFactory(), { now: 100 * day }, { crypto });
+  const key = await cache.keyFor(payload);
+  assert.equal(await cache.put(key, record()), true);
+  assert.equal(imported.extractable, false);
+  assert.equal(imported.algorithm.name, 'AES-GCM');
+  assert.equal(imported.algorithm.length, 256);
+  assert.deepEqual(imported.usages, ['encrypt', 'decrypt']);
+  await assert.rejects(webcrypto.subtle.exportKey('raw', imported));
+  assert.ok(await cache.get(key));
+});
+
+
+test('a timed-out session-key request can recover on the next cache operation', async () => {
+  let calls = 0;
+  const chrome = { runtime: { sendMessage: async () => {
+    calls += 1;
+    if (calls === 1) return new Promise(() => {});
+    return { cipher: structuredClone(sessionCipher) };
+  } } };
+  const { cache } = harness(new IDBFactory(), { now: 100 * day }, {
+    chrome, setTimeout: (callback, delay) => setTimeout(callback, Math.min(delay, 20)),
+  });
+  assert.equal((await cache.stats()).available, false);
+  const key = await cache.keyFor(payload);
+  assert.equal(await cache.put(key, record()), true);
+  assert.ok(await cache.get(key));
+  assert.equal((await cache.stats()).available, true);
+  assert.equal(calls, 2, 'a recovered session key should remain memoized');
 });

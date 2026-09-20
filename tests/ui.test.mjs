@@ -5,9 +5,50 @@ import { JSDOM } from 'jsdom';
 
 const script = readFileSync(new URL('../extension/ui.js', import.meta.url), 'utf8');
 
-function fixture(t, options = {}) {
+// JSDOM cannot produce trusted user events. This harness-only adapter presents
+// browser-trusted delivery to unchanged production listeners; raw-event tests
+// disable it. No production trust checks or source text are rewritten.
+function trustedEventHarness(window, enabled = true) {
+  const control = { enabled };
+  const add = window.EventTarget.prototype.addEventListener;
+  const remove = window.EventTarget.prototype.removeEventListener;
+  const listeners = new WeakMap();
+  const events = new WeakMap();
+  window.EventTarget.prototype.addEventListener = function(type, listener, options) {
+    if (!listener) return add.call(this, type, listener, options);
+    if (!listeners.has(listener)) listeners.set(listener, function(event) {
+      let delivered = event;
+      if (control.enabled) {
+        if (!events.has(event)) events.set(event, new Proxy(event, {
+          get(target, property) {
+            if (property === 'isTrusted') return true;
+            const value = Reflect.get(target, property, target);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        }));
+        delivered = events.get(event);
+      }
+      return typeof listener === 'function' ? listener.call(this, delivered) : listener.handleEvent(delivered);
+    });
+    return add.call(this, type, listeners.get(listener), options);
+  };
+  window.EventTarget.prototype.removeEventListener = function(type, listener, options) {
+    return remove.call(this, type, listeners.get(listener) || listener, options);
+  };
+  return control;
+}
+
+function fixture(t, options = {}, { trustedEvents = true } = {}) {
   const dom = new JSDOM('<!doctype html><html><body><article>Original page text.</article></body></html>', { runScripts: 'outside-only' });
   t.after(() => dom.window.close());
+  const trust = trustedEventHarness(dom.window, trustedEvents);
+  const roots = new WeakMap();
+  const attachShadow = dom.window.Element.prototype.attachShadow;
+  dom.window.Element.prototype.attachShadow = function(options) {
+    const root = attachShadow.call(this, options);
+    roots.set(this, root);
+    return root;
+  };
   dom.window.eval(script);
   const actions = [];
   const ui = dom.window.ReaderUI.create({
@@ -17,10 +58,10 @@ function fixture(t, options = {}) {
       actions.push({ action, payload: payload === undefined ? undefined : JSON.parse(JSON.stringify(payload)) });
     },
   });
-  const root = ui.host.shadowRoot;
+  const root = roots.get(ui.host);
   const get = selector => root.querySelector(selector);
   const dispatch = (element, event) => element.dispatchEvent(new dom.window.Event(event, { bubbles: true, composed: true }));
-  return { dom, ui, root, get, actions, dispatch };
+  return { dom, ui, root, get, actions, dispatch, trust };
 }
 
 test('playback controls dispatch actions appropriate to current state and stopping leaves the reader available', t => {
@@ -154,14 +195,14 @@ test('article titles and error messages are rendered as text without altering th
 });
 
 test('keyboard interaction is isolated, Escape dismisses settings, and destroy disables detached controls', t => {
-  const { dom, ui, get, actions } = fixture(t);
+  const { dom, ui, root, get, actions } = fixture(t);
   let pageKeys = 0;
   dom.window.document.addEventListener('keydown', () => pageKeys++);
   get('.settings-toggle').click();
   get('#reader-speed').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true, cancelable: true }));
   assert.equal(get('.drawer').hidden, true);
   assert.equal(pageKeys, 0);
-  assert.equal(ui.host.shadowRoot.activeElement, get('.settings-toggle'));
+  assert.equal(root.activeElement, get('.settings-toggle'));
   get('.close').click();
   assert.equal(actions.at(-1).action, 'close');
   const play = get('.primary');
@@ -426,4 +467,66 @@ test('all word-seeking hints describe the double-click gesture', t => {
     ui.update(state);
     assert.match(get('.timing-hint').textContent, /Double-click a word/);
   }
+});
+
+test('closed controls reject raw page-synthesized play, paste, settings, seek, keyboard, and pointer actions', t => {
+  const { dom, ui, root, get, actions, dispatch } = fixture(t, {}, { trustedEvents: false });
+  assert.equal(ui.host.shadowRoot, null);
+  assert.equal(root.mode, 'closed');
+  assert.equal(new dom.window.Event('click').isTrusted, false);
+  get('#reader-model').value = 'gpt-4o-mini-tts';
+  get('#reader-voice').value = 'nova';
+  get('#reader-instructions').value = 'Synthetic instructions';
+  get('#reader-text').value = 'Synthetic article that must never trigger a paid request.';
+  get('#reader-speed').value = '4';
+  get('.progress').value = '100';
+  for (const selector of ['#reader-model', '#reader-voice', '#reader-instructions', '#reader-follow', '#reader-sync', '#reader-speed', '#reader-text', '.progress']) {
+    dispatch(get(selector), 'input');
+    dispatch(get(selector), 'change');
+  }
+  // Dispatch directly even through a disabled control, which hostile JS can do.
+  for (const button of root.querySelectorAll('button')) dispatch(button, 'click');
+  get('.primary').click();
+  get('.drag').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, composed: true }));
+  get('.drag').dispatchEvent(pointer(dom.window, 'pointerdown', { clientX: 100, clientY: 100 }));
+  dom.window.dispatchEvent(pointer(dom.window, 'pointermove', { clientX: 20, clientY: 20 }));
+  dom.window.dispatchEvent(pointer(dom.window, 'pointerup', { clientX: 20, clientY: 20 }));
+  assert.deepEqual(actions, []);
+  assert.equal(get('.drawer').hidden, true);
+  assert.equal(get('.reader').classList.contains('dragging'), false);
+  // Internal state messages still work; guarding DOM input must not disable updates.
+  ui.update({ status: 'playing', wordIndex: 22, remainingSeconds: 41 });
+  assert.equal(get('.primary').getAttribute('aria-label'), 'Pause reading');
+  assert.equal(get('.progress').value, '22');
+  assert.equal(get('.time').textContent, '0:41');
+  assert.deepEqual(actions, []);
+});
+
+test('a control detached from its protected tree still rejects untrusted activation', t => {
+  const { dom, get, actions } = fixture(t, {}, { trustedEvents: false });
+  // The harness retains a private reference only to exercise defense in depth.
+  const play = get('.primary');
+  dom.window.document.body.append(play);
+  play.click();
+  play.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, composed: true }));
+  assert.deepEqual(actions, []);
+});
+
+test('synthetic window events cannot hijack or finish a genuine drag', t => {
+  const { dom, ui, get, actions, trust } = fixture(t, { settings: { layout: { x: 100, y: 100, collapsed: true } } });
+  get('.orb').dispatchEvent(pointer(dom.window, 'pointerdown', { clientX: 110, clientY: 110 }));
+  trust.enabled = false;
+  dom.window.dispatchEvent(pointer(dom.window, 'pointermove', { clientX: 400, clientY: 400 }));
+  dom.window.dispatchEvent(pointer(dom.window, 'pointerup', { clientX: 400, clientY: 400 }));
+  dom.window.dispatchEvent(pointer(dom.window, 'pointercancel', { clientX: 400, clientY: 400 }));
+  assert.equal(ui.host.style.left, '100px');
+  assert.equal(ui.host.style.top, '100px');
+  assert.equal(get('.reader').classList.contains('dragging'), true);
+  assert.deepEqual(actions, []);
+  trust.enabled = true;
+  dom.window.dispatchEvent(pointer(dom.window, 'pointermove', { clientX: 250, clientY: 250 }));
+  dom.window.dispatchEvent(pointer(dom.window, 'pointerup', { clientX: 250, clientY: 250 }));
+  assert.equal(ui.host.style.left, '240px');
+  assert.equal(ui.host.style.top, '240px');
+  assert.equal(actions.length, 1);
 });

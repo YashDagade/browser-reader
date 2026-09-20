@@ -1,9 +1,9 @@
-importScripts('speech-client.js');
+importScripts('session-data.js', 'speech-client.js');
 const DEFAULTS = {speed:1.5, voice:'alloy', model:'local', follow:true, instructions:'', syncMode:'precise'};
 const IDLE_ALARM = 'hermes-release-audio';
 let current = null, creating = null, localEpoch = 0, saveAt = 0, lastStatus = '';
 let commandQueue = Promise.resolve();
-const storageReady = chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});
+const storageReady = HermesSession.initialize();
 const clamp = (x,a,b) => Math.max(a,Math.min(b,x));
 function enqueue(operation) {const result=commandQueue.then(operation);commandQueue=result.catch(()=>{});return result;}
 function settingsOnly(value={}) {
@@ -23,7 +23,7 @@ function settingsOnly(value={}) {
 }
 async function preferences() {
   await storageReady;
-  const {settings}=await chrome.storage.local.get('settings');
+  const settings=await HermesSession.preferences();
   return {...DEFAULTS,...settingsOnly(settings)};
 }
 async function emit(state) {
@@ -128,7 +128,7 @@ async function control(message,sender) {
   if(action==='settings') {
     const previous=current.settings;
     current.settings={...previous,...settingsOnly(message.settings)};
-    await chrome.storage.local.set({settings:current.settings});
+    await HermesSession.savePreferences(current.settings);
     const wasPlaying=['playing','loading'].includes(current.state.status), index=current.state.wordIndex||0;
     const contexts=await chrome.runtime.getContexts({contextTypes:['OFFSCREEN_DOCUMENT']});
     if(previous.model!==current.settings.model) {
@@ -162,16 +162,33 @@ async function control(message,sender) {
 chrome.runtime.onMessage.addListener((message,sender,reply)=>{
   if(message.target!=='background')return;
   const internal=sender.url===chrome.runtime.getURL('offscreen.html')&&!sender.tab;
+  const options=sender.url?.split('?')[0]===chrome.runtime.getURL('options.html');
   if(message.type==='connection-internal') {
-    if(!internal){reply({error:'Not permitted.'});return;}
+    if(!internal&&!options){reply({error:'Not permitted.'});return;}
     storageReady.then(async()=>{
-      const {hermesConnection}=await chrome.storage.local.get('hermesConnection');
+      const connection=await HermesSession.connection();
       const permission=await chrome.permissions.contains({origins:['https://api.openai.com/*']});
-      reply({connection:hermesConnection||{mode:'local'},permission});
+      reply({connection,permission});
     }).catch(()=>reply({error:'Connection unavailable.'}));return true;
   }
+  if(message.type==='audio-key-internal') {
+    if(!internal&&!options){reply({error:'Not permitted.'});return;}
+    enqueue(async()=>reply({cipher:await HermesSession.audioCipher()})).catch(()=>reply({error:'Audio cache unavailable.'}));return true;
+  }
+  if(message.type==='connection-manage') {
+    if(!options){reply({error:'Not permitted.'});return;}
+    enqueue(async()=>{
+      const value=message.action==='save'?await HermesSession.saveConnection(message.connection||{}):
+        message.action==='forget'?await HermesSession.forgetConnection():await HermesSession.connection();
+      reply({connection:{mode:value.mode,consent:value.consent,hasKey:Boolean(value.apiKey)}});
+    }).catch(error=>reply({error:error.message}));return true;
+  }
+  if(message.type==='preferences-save') {
+    if(!options){reply({error:'Not permitted.'});return;}
+    enqueue(async()=>{await HermesSession.savePreferences({...await preferences(),...settingsOnly(message.settings)});reply({ok:true});}).catch(()=>reply({error:'Preferences could not be saved.'}));return true;
+  }
   if(message.type==='preferences') {
-    if(!sender.tab&&sender.url!==chrome.runtime.getURL('options.html'))return;
+    if(!sender.tab&&!options){reply({error:'Not permitted.'});return;}
     preferences().then(settings=>reply({settings}));return true;
   }
   if(message.type==='layout') {
@@ -179,7 +196,7 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
     enqueue(async()=>{
       await restore();
       const settings=await preferences();Object.assign(settings,settingsOnly({layout:message.layout}));
-      await chrome.storage.local.set({settings});
+      await HermesSession.savePreferences(settings);
       if(current?.tabId===sender.tab.id&&(!current.documentId||!sender.documentId||current.documentId===sender.documentId)) {
         current.settings.layout=settings.layout;await emit({settings:current.settings});
       }
@@ -203,7 +220,7 @@ chrome.commands.onCommand.addListener(async command=>{if(command==='_execute_act
 chrome.runtime.onInstalled.addListener(async details=>{
   chrome.contextMenus.removeAll(()=>chrome.contextMenus.create({id:'hermes-read',title:'Read with Hermes',contexts:['selection','page']}));
   const settings=await preferences();if(details?.previousVersion==='0.1.0')settings.voice='alloy';
-  await chrome.storage.local.set({settings});chrome.action.setBadgeBackgroundColor({color:'#242424'});
+  await HermesSession.savePreferences(settings);chrome.action.setBadgeBackgroundColor({color:'#242424'});
 });
 chrome.contextMenus.onClicked.addListener((_info,tab)=>activate(tab));
 chrome.alarms.onAlarm.addListener(alarm=>enqueue(async()=>{

@@ -9,6 +9,7 @@ const timingSource = await readFile(new URL('../extension/timing.js', import.met
 const cacheSource = await readFile(new URL('../extension/audio-cache.js', import.meta.url), 'utf8');
 const source = await readFile(new URL('../extension/offscreen.js', import.meta.url), 'utf8');
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+const sessionCipher = { id: 'test-playback-session', key: [...webcrypto.getRandomValues(new Uint8Array(32))] };
 
 function wav(byteLength = 8044) {
   const data = new ArrayBuffer(byteLength);
@@ -29,7 +30,7 @@ function wav(byteLength = 8044) {
   return data;
 }
 
-function harness({ withAlignment = false, persistentStore = null } = {}) {
+function harness({ withAlignment = false, persistentStore = null, cipher = sessionCipher } = {}) {
   const requests = [];
   const players = [];
   const alignments = [];
@@ -58,8 +59,8 @@ function harness({ withAlignment = false, persistentStore = null } = {}) {
     removeEventListener() {}
   }
   const context = {
-    Audio: Player, Blob, DOMException, AbortController, DataView, Uint8Array,
-    ...(persistentStore ? { indexedDB: persistentStore, crypto: webcrypto, TextEncoder } : {}),
+    Audio: Player, Blob, DOMException, AbortController, DataView, Uint8Array, ArrayBuffer,
+    ...(persistentStore ? { indexedDB: persistentStore, crypto: webcrypto, TextEncoder, TextDecoder } : {}),
     setTimeout, clearTimeout,
     setInterval: (callback) => { const id = ++timerCounter; timers.set(id, callback); return id; },
     clearInterval: (id) => timers.delete(id),
@@ -67,7 +68,10 @@ function harness({ withAlignment = false, persistentStore = null } = {}) {
     URL: { createObjectURL: () => `blob:reader-${++urlCounter}`, revokeObjectURL: (url) => revoked.push(url) },
     chrome: { runtime: {
       onMessage: { addListener: (callback) => { listener = callback; } },
-      sendMessage: (message) => { messages.push(message); return Promise.resolve(); },
+      sendMessage: (message) => {
+        if (message.type === 'audio-key-internal') return Promise.resolve({ cipher: structuredClone(cipher) });
+        messages.push(message); return Promise.resolve();
+      },
     } },
     HermesSpeech: {
       speech: (body, signal) => new Promise((resolve, reject) => {
