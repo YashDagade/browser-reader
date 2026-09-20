@@ -5,11 +5,11 @@
 Click **Start reading**, follow the highlighted words, and change speed from **0.75× to 4×**. Use an installed browser voice or connect OpenAI directly from Chrome. No Node, backend, or build step is needed for either option.
 
 - A readable floating player with play, pause, stop, passage skipping, and a position slider.
-- Drag it anywhere, dock it left or right, or collapse it to a small movable button while listening.
-- Click a word to jump there, follow along with optional auto-scroll, or read selected/pasted text.
+- Drag it anywhere, drop it near an edge to dock, or collapse it to a small movable button while listening.
+- Double-click a word to jump there, follow along with optional auto-scroll, or read selected/pasted text. Single clicks keep their normal behavior.
 - Local article extraction skips common navigation, ads, controls, and captions. No LLM rewrites the article.
 - OpenAI voices including **Alloy**, **Cedar**, and **Nova**, with delivery and pronunciation guidance for `gpt-4o-mini-tts`.
-- Short initial audio chunks, bounded prefetch, and optional background word alignment. Speed changes apply to buffered audio without regenerating it.
+- Short initial audio chunks, bounded prefetch, optional background word alignment, and saved audio for repeat listening. Speed changes never trigger an API request.
 
 ## Install and listen
 
@@ -56,13 +56,16 @@ Install the extension separately in each Chrome profile. Direct keys and prefere
 | Open Hermes | Toolbar icon, page context menu, or `Alt+Shift+R` (`Option+Shift+R` on Mac) |
 | Play / pause | Main button or `Alt+Space` while the page is focused |
 | Pause | `Escape` while the page is focused |
-| Change speed or voice | Speed button or player settings |
-| Seek | Click a non-link word or use the position slider |
+| Cycle speed | Toolbar speed button: 1× → 1.5× → 2× → 4× |
+| Set any speed or change voice | Settings; the speed slider covers 0.75×–4× |
+| Seek | Double-click a non-link word or use the position slider |
 | Move between passages | Previous / next buttons |
-| Move / dock / collapse | Drag handle, position settings, or collapse button |
+| Move / dock / collapse | Drag handle, drop near any edge, or use position/collapse controls |
 | Reset or close | Stop or close; closing stops playback |
 
 Select a passage before opening Hermes to read just that selection. **Read your own text** accepts pasted text without page highlighting. Customize the opening shortcut at `chrome://extensions/shortcuts` if another app claims it.
+
+Dropping near the left or right edge makes the toolbar vertical; top and bottom keep it horizontal. Auto-scroll moves before the spoken word reaches the bottom and briefly yields to manual scrolling. Same-page links keep the reading session alive. If its background session is lost, the controls reconnect to the current article at the saved word.
 
 **Word timing:** **Improve timing** matches background `whisper-1` transcription timestamps to the source. Playback starts without waiting; estimates remain while alignment is pending or unavailable. This adds API usage and is not perfectly exact. Choose **Lightweight** to disable it. Browser voices use native word events when available. See [OpenAI's transcription guide](https://developers.openai.com/api/docs/guides/speech-to-text).
 
@@ -72,7 +75,9 @@ Select a passage before opening Hermes to read just that selection. **Read your 
 
 Hermes runs on the active tab only when invoked, with no analytics. OpenAI receives current and prefetched text, plus generated audio for improved timing; page HTML, cookies, and browsing history are not sent. Browser mode requires an installed, non-remote voice.
 
-Audio stays in memory. The extension caps retained audio at **12 MiB**, creates its audio document when needed, and releases it on stop/close or after three idle minutes. It does not poll playback while idle. The helper's **16 MiB** audio cache expires after ten minutes. These are cache limits, not total RAM limits.
+Hermes keeps up to **12 MiB** of audio in memory and saves completed audio in the extension's local IndexedDB cache: up to **32 MiB**, **256 entries**, and **seven days** of reuse. Saved speech and completed word alignment can survive closing and reopening the reader, avoiding repeat API work until eviction. The cache stores audio, numeric timings, and hashed identifiers, not API keys, plaintext source text, or article URLs. The audio itself contains the narrated content. Remove saved entries with **Clear saved audio** in Options.
+
+The audio document is created when needed and released on stop/close or after three idle minutes. Hermes does not poll playback while idle. The optional helper separately holds a **16 MiB** memory cache with a ten-minute expiry. Cache limits are not total RAM limits; saved audio may also be evicted by Chrome.
 
 Environment and common credential files are Git-ignored; no key is bundled in the source or extension ZIP. The helper rejects website origins and supports an optional extension-ID allowlist. See [security and data flow](docs/architecture.md#credentials-and-request-boundaries).
 
@@ -98,6 +103,6 @@ Licensed under [MIT](LICENSE).
 
 [![Hermes: a movable Chrome reader with highlighting, voice controls, and adjustable speed](docs/demo-poster.png)](docs/hermes-demo.mp4)
 
-[Watch the 35-second walkthrough (MP4)](docs/hermes-demo.mp4). This silent, captioned demo uses real Chrome captures and original sample text.
+[Watch the v0.2.0 walkthrough (MP4)](docs/hermes-demo.mp4). This silent, captioned demo shows the earlier interface. In v0.3.0, word seeking uses a double-click, the toolbar speed button cycles rates directly, and dropping near an edge docks the player.
 
 Hermes keeps the article in place and adds a player you can move out of the way. Text extraction runs locally, short audio chunks keep playback responsive, and speed changes happen in the player. Use OpenAI for expressive voices or an installed browser voice for local speech. To try the sample article, run `npm run demo` from the full repository and open the local address printed in the terminal.

@@ -45,22 +45,32 @@ test('playback controls dispatch actions appropriate to current state and stoppi
   assert.deepEqual(actions.map(event => event.action), ['play', 'pause', 'pause', 'play', 'previous', 'next', 'stop']);
 });
 
-test('speed slider immediately changes playback settings and presets keep the accessible display in sync', t => {
-  const { get, actions, dispatch } = fixture(t, { settings: { speed: 1.5 } });
-  get('.speed-toggle').click();
+test('toolbar speed cycles without opening preferences and the menu slider supports intermediate speeds', t => {
+  const { get, actions, dispatch } = fixture(t);
+  const button = get('.speed-toggle');
+  for (const speed of [1.5, 2, 4, 1]) {
+    assert.match(button.getAttribute('aria-label'), new RegExp(`Change to ${speed}×`));
+    button.click();
+    assert.deepEqual(actions.at(-1), { action: 'settings', payload: { speed } });
+    assert.equal(button.textContent, `${speed}×`);
+    assert.equal(get('.drawer').hidden, true);
+  }
+  assert.equal(button.hasAttribute('aria-controls'), false);
+  assert.equal(get('.preset'), null);
+  get('.settings-toggle').click();
   assert.equal(get('.drawer').hidden, false);
-  assert.equal(get('.speed-toggle').getAttribute('aria-expanded'), 'true');
   const speed = get('#reader-speed');
+  assert.equal(speed.min, '0.75');
+  assert.equal(speed.max, '4');
   speed.value = '2.75';
   dispatch(speed, 'input');
   assert.deepEqual(actions.at(-1), { action: 'settings', payload: { speed: 2.75 } });
   assert.equal(get('.speed-output').textContent, '2.75×');
   assert.equal(speed.getAttribute('aria-valuetext'), '2.75 times normal speed');
-  get('[data-speed="4"]').click();
-  assert.deepEqual(actions.at(-1), { action: 'settings', payload: { speed: 4 } });
+  assert.match(button.getAttribute('aria-label'), /Change to 4×/);
+  button.click();
   assert.equal(speed.value, '4');
-  assert.equal(get('[data-speed="4"]').getAttribute('aria-pressed'), 'true');
-  assert.equal(get('[data-speed="1.5"]').getAttribute('aria-pressed'), 'false');
+  assert.equal(get('.drawer').hidden, false);
 });
 
 test('voice and engine settings exclude incompatible voices and local mode does not claim a missing OpenAI connection', t => {
@@ -308,7 +318,8 @@ test('remaining time always uses minutes and seconds, updates with playback and 
   assert.equal(get('.time').textContent, '122:01');
   ui.update({ remainingSeconds: 7319 });
   assert.equal(get('.time').textContent, '121:59');
-  get('[data-speed="2"]').click();
+  get('.speed-toggle').click();
+  get('.speed-toggle').click();
   assert.equal(get('.time').textContent, '61:00');
   ui.update({ remainingSeconds: undefined, wordIndex: 23900 });
   assert.equal(get('.time').textContent, '~0:16');
@@ -345,4 +356,74 @@ test('all supported voices retain the actual saved selection and legacy models r
   assert.equal(get('#reader-voice').options.length, 9);
   ui.update({ model: 'gpt-4o-mini-tts', voice: 'verse' });
   assert.equal(get('#reader-voice').value, 'verse');
+});
+
+test('dropping near any viewport edge docks in the correct orientation and only persists the final position', t => {
+  for (const [dock, x, y, orientation] of [
+    ['left', 20, 300, 'vertical'], ['right', 1004, 200, 'vertical'],
+    ['top', 500, 20, 'horizontal'], ['bottom', 500, 748, 'horizontal'],
+    ['free', 500, 300, 'horizontal'],
+  ]) {
+    const { dom, ui, get, actions } = fixture(t, { settings: { layout: { x: 150, y: 200 } } });
+    get('.drag').dispatchEvent(pointer(dom.window, 'pointerdown', { clientX: 160, clientY: 210 }));
+    dom.window.dispatchEvent(pointer(dom.window, 'pointermove', { clientX: x, clientY: y }));
+    assert.equal(actions.length, 0);
+    dom.window.dispatchEvent(pointer(dom.window, 'pointerup', { clientX: x, clientY: y }));
+    assert.equal(actions.length, 1);
+    assert.equal(actions[0].payload.dock, dock);
+    assert.equal(get('.reader').dataset.dock, dock);
+    assert.equal(get('.progress').getAttribute('aria-orientation'), orientation);
+    assert.equal(ui.host.style.width, orientation === 'vertical' ? '76px' : '760px');
+    if (dock === 'left') assert.equal(ui.host.style.left, '12px');
+    if (dock === 'right') assert.equal(ui.host.style.left, '936px');
+    if (dock === 'top') assert.equal(ui.host.style.top, '12px');
+    if (dock === 'bottom') assert.equal(ui.host.style.top, '680px');
+    assert.equal(get('.drawer').hidden, true);
+  }
+});
+
+test('corner drops choose the nearest edge, a docked orb stays collapsed, and resizing retains its edge', t => {
+  const { dom, ui, get, actions } = fixture(t, { settings: { layout: { x: 150, y: 200, collapsed: true } } });
+  get('.orb').dispatchEvent(pointer(dom.window, 'pointerdown', { clientX: 160, clientY: 210 }));
+  dom.window.dispatchEvent(pointer(dom.window, 'pointermove', { clientX: 1008, clientY: 25 }));
+  dom.window.dispatchEvent(pointer(dom.window, 'pointerup', { clientX: 1008, clientY: 25 }));
+  assert.equal(actions.at(-1).payload.dock, 'right');
+  assert.equal(actions.at(-1).payload.collapsed, true);
+  assert.equal(ui.host.style.width, '60px');
+  assert.equal(ui.host.style.left, '952px');
+  assert.equal(get('.bar').hidden, true);
+  Object.defineProperty(dom.window, 'innerWidth', { value: 800, configurable: true });
+  dom.window.dispatchEvent(new dom.window.Event('resize'));
+  assert.equal(ui.host.style.left, '728px');
+  ui.expand();
+  assert.equal(get('.reader').dataset.dock, 'right');
+  assert.equal(ui.host.style.width, '76px');
+  assert.equal(ui.host.style.left, '712px');
+});
+
+test('dragging dismisses preferences and the drop click cannot accidentally open them', t => {
+  const { dom, ui, get } = fixture(t, { settings: { layout: { x: 150, y: 200 } } });
+  get('.settings-toggle').click();
+  assert.equal(get('.drawer').hidden, false);
+  get('.drag').dispatchEvent(pointer(dom.window, 'pointerdown', { clientX: 160, clientY: 210 }));
+  dom.window.dispatchEvent(pointer(dom.window, 'pointermove', { clientX: 500, clientY: 20 }));
+  assert.equal(get('.drawer').hidden, true);
+  dom.window.dispatchEvent(pointer(dom.window, 'pointerup', { clientX: 500, clientY: 20 }));
+  get('.settings-toggle').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, composed: true, detail: 1 }));
+  assert.equal(get('.drawer').hidden, true);
+  ui.update({ status: 'playing', wordIndex: 25, layout: { dock: 'bottom' } });
+  assert.equal(get('.drawer').hidden, true);
+  get('.speed-toggle').click();
+  assert.equal(get('.drawer').hidden, true);
+  // Keyboard activation remains available immediately after a drag.
+  get('.settings-toggle').click();
+  assert.equal(get('.drawer').hidden, false);
+});
+
+test('all word-seeking hints describe the double-click gesture', t => {
+  const { ui, get } = fixture(t);
+  for (const state of [{ model: 'local' }, { model: 'gpt-4o-mini-tts', timingSource: 'aligned' }, { timingSource: 'estimated', syncMode: 'precise' }, { syncMode: 'estimated' }]) {
+    ui.update(state);
+    assert.match(get('.timing-hint').textContent, /Double-click a word/);
+  }
 });

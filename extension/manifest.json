@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Hermes \u00b7 Article Reader",
   "description": "Your articles, at your pace. Fast speech, word highlighting, and a quiet floating player.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "minimum_chrome_version": "116",
   "permissions": [
     "activeTab",

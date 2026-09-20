@@ -19,6 +19,7 @@
   const number = (value, fallback) => value !== null && value !== '' && Number.isFinite(Number(value)) ? Number(value) : fallback;
   const clamp = (value, min, max) => Math.min(Math.max(min, max), Math.max(min, value));
   const speedLabel = value => `${Number(value.toFixed(2))}×`;
+  const nextSpeed = speed => [1, 1.5, 2, 4].find(value => value > speed + 0.005) || 1;
   const capitalize = value => value.charAt(0).toUpperCase() + value.slice(1);
 
   function create({ title = 'Your article', totalWords = 0, settings = {}, onAction = () => {} } = {}) {
@@ -83,9 +84,6 @@
         .field-label { color: #d1d1d3; font-size: 15px; display: block; }
         .speed-output { font-size: 18px; color: #f4eee0; font-weight: 500; font-variant-numeric: tabular-nums; }
         .speed-slider { margin-bottom: 18px !important; }
-        .presets { display: flex; gap: 6px; margin-bottom: 18px; }
-        .preset { min-height: 40px; padding: 5px 0; border-radius: 10px; background: #ffffff06; border: 1px solid #ffffff12; color: #c0c0c3; font-size: 15px; flex: 1; }
-        .preset:hover, .preset[aria-pressed=true] { color: #f5eddf; background: #ddc79418; border-color: #ddc79466; }
         select { width: 100%; display: block; margin-top: 7px; min-height: 44px; padding: 9px 11px; border: 1px solid #4b4c50; border-radius: 11px; color: #efeff0; background: #292a2d; font-size: 16px; }
         .follow { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; margin-top: 8px; cursor: pointer; }
         .follow input { accent-color: #ded1b3; width: 19px; height: 19px; margin: 0; }
@@ -102,7 +100,7 @@
         .paste-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 48px; margin-top: 12px; padding: 10px 0 0; background: transparent; border-top: 1px solid #ffffff15; font-size: 15px; color: #dededc; text-align: left; }
         .paste-toggle span:last-child { color: #b1b2b7; font-size: 22px; }
         .paste-action { background: #ebe4d4; color: #23221f; border-radius: 10px; padding: 10px 15px; min-height: 44px; font-size: 15px; font-weight: 600; }
-        .dock-controls { display: flex; gap: 6px; margin-top: 8px; }
+        .dock-controls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
         .dock-button { border: 1px solid #4b4c50; background: transparent; min-height: 42px; flex: 1; border-radius: 10px; font-size: 14px; }
         .dock-button[aria-pressed=true] { background: #ddc79418; border-color: #ddc79466; }
         .utility { display: flex; gap: 12px; justify-content: space-between; margin-top: 12px; padding-top: 8px; border-top: 1px solid #ffffff15; }
@@ -120,9 +118,6 @@
           <div class="drawer-top"><h2 class="drawer-title">Hermes</h2><button type="button" class="icon-button drawer-dismiss" aria-label="Close settings">${icon('close')}</button></div>
           <div class="speed-heading"><label class="field-label" for="reader-speed">Reading speed</label><output class="speed-output" for="reader-speed">1×</output></div>
           <input class="speed-slider" id="reader-speed" type="range" min="0.75" max="4" step="0.05" aria-label="Reading speed">
-          <div class="presets" aria-label="Speed presets">
-            ${[1, 1.5, 2, 3, 4].map(speed => `<button type="button" class="preset" data-speed="${speed}" aria-pressed="false">${speed}×</button>`).join('')}
-          </div>
           <label class="field-label voice-field" for="reader-voice">Voice<select id="reader-voice"></select></label>
           <label class="follow field-label" for="reader-follow"><span>Auto-scroll with the voice</span><input id="reader-follow" type="checkbox"></label>
           <p class="hint timing-hint"></p>
@@ -147,6 +142,8 @@
               <button class="dock-button" type="button" data-dock="left" aria-pressed="false">Left</button>
               <button class="dock-button" type="button" data-dock="free" aria-pressed="true">Floating</button>
               <button class="dock-button" type="button" data-dock="right" aria-pressed="false">Right</button>
+              <button class="dock-button" type="button" data-dock="top" aria-pressed="false">Top</button>
+              <button class="dock-button" type="button" data-dock="bottom" aria-pressed="false">Bottom</button>
             </div>
           </details>
           <button type="button" class="paste-toggle" aria-expanded="false" aria-controls="reader-paste"><span>Read your own text</span><span aria-hidden="true">+</span></button>
@@ -158,12 +155,12 @@
           <div class="utility"><button type="button" class="stop" aria-label="Stop reading">${icon('stop')}Stop reading</button><button type="button" class="close" aria-label="Close reader">${icon('close')}Close Hermes</button></div>
         </div>
         <div class="bar" role="group" aria-label="Reading controls">
-          <button type="button" class="icon-button drag" aria-label="Move Hermes" title="Drag to move; arrow keys also move the toolbar">${icon('drag')}</button>
+          <button type="button" class="icon-button drag" aria-label="Move Hermes" title="Drag near an edge to dock; arrow keys also move the toolbar">${icon('drag')}</button>
           <button type="button" class="primary" aria-label="Start reading">${icon('play')}<span class="primary-label">Start reading</span></button>
           <button type="button" class="icon-button skip-button previous" aria-label="Previous passage" title="Previous passage">${icon('previous')}</button>
           <button type="button" class="icon-button skip-button next" aria-label="Next passage" title="Next passage">${icon('next')}</button>
           <div class="track"><div class="track-heading"><span class="title"></span><span class="time"></span></div><div class="progress-wrap"><input class="progress" type="range" min="0" max="1" step="1" value="0" aria-label="Reading position"></div></div>
-          <button type="button" class="icon-button speed-toggle" aria-label="Adjust reading speed" aria-expanded="false" aria-controls="reader-settings" title="Adjust reading speed">1×</button>
+          <button type="button" class="icon-button speed-toggle" aria-label="Reading speed 1×. Change to 1.5×" title="Change speed to 1.5×">1×</button>
           <button type="button" class="icon-button settings-toggle" aria-label="Reader settings" aria-expanded="false" aria-controls="reader-settings" title="Reader settings">${icon('settings')}</button>
           <button type="button" class="icon-button collapse" aria-label="Collapse Hermes" title="Collapse Hermes">${icon('collapse')}</button>
         </div>
@@ -187,17 +184,18 @@
     };
     let layout = { dock: 'free', collapsed: false, ...settings.layout };
     let destroyed = false, seeking = false, drawerOpen = false, drag = null, suppressOrbClick = false;
-    let lastAnnouncement = '', lastVoiceModel = '';
+    let lastAnnouncement = '', lastVoiceModel = '', suppressPointerClickUntil = 0;
+    const isVertical = () => layout.dock === 'left' || layout.dock === 'right';
     const emit = (action, payload) => { if (!destroyed) onAction(action, payload); };
 
     function panelPosition() {
       const viewportWidth = window.innerWidth, viewportHeight = window.innerHeight;
       const width = Math.min(420, Math.max(0, viewportWidth - 24));
-      const barHeight = (layout.collapsed ? 60 : elements.bar.getBoundingClientRect().height) || (layout.dock === 'free' ? 76 : 430);
+      const barHeight = (layout.collapsed ? 60 : elements.bar.getBoundingClientRect().height) || (isVertical() ? 430 : 76);
       const anchorX = number(layout.x, 12), anchorY = number(layout.y, 12);
       const panelHeight = elements.drawer.getBoundingClientRect().height || Math.min(540, viewportHeight * .75);
       let x = layout.dock === 'left' ? anchorX + 84 : layout.dock === 'right' ? anchorX - width - 12 : anchorX;
-      let y = layout.dock !== 'free' ? anchorY : anchorY >= panelHeight + 24 ? anchorY - panelHeight - 12 : anchorY + barHeight + 12;
+      let y = isVertical() ? anchorY : anchorY >= panelHeight + 24 ? anchorY - panelHeight - 12 : anchorY + barHeight + 12;
       elements.drawer.style.left = `${clamp(x, 12, viewportWidth - width - 12)}px`;
       elements.drawer.style.top = `${clamp(y, 12, viewportHeight - panelHeight - 12)}px`;
       const noticeHeight = elements.notice.getBoundingClientRect().height || 85;
@@ -206,22 +204,24 @@
     }
 
     function applyLayout() {
-      layout.dock = ['left', 'right'].includes(layout.dock) ? layout.dock : 'free';
+      layout.dock = ['left', 'right', 'top', 'bottom'].includes(layout.dock) ? layout.dock : 'free';
       layout.collapsed = Boolean(layout.collapsed);
       elements.reader.dataset.dock = layout.dock;
       elements.bar.hidden = layout.collapsed;
       elements.orb.hidden = !layout.collapsed;
-      const width = layout.collapsed ? 60 : layout.dock === 'free' ? Math.min(760, window.innerWidth - 24) : 76;
+      const width = layout.collapsed ? 60 : isVertical() ? 76 : Math.min(760, window.innerWidth - 24);
       host.style.width = `${Math.max(60, width)}px`;
       const measured = elements.bar.getBoundingClientRect().height;
-      const height = layout.collapsed ? 60 : measured || (layout.dock === 'free' ? 76 : 430);
+      const height = layout.collapsed ? 60 : measured || (isVertical() ? 430 : 76);
       layout.x = clamp(number(layout.x, (window.innerWidth - width) / 2), 12, window.innerWidth - width - 12);
       layout.y = clamp(number(layout.y, window.innerHeight - height - 24), 12, window.innerHeight - height - 12);
       if (layout.dock === 'left') layout.x = 12;
       if (layout.dock === 'right') layout.x = Math.max(12, window.innerWidth - width - 12);
+      if (layout.dock === 'top') layout.y = 12;
+      if (layout.dock === 'bottom') layout.y = Math.max(12, window.innerHeight - height - 12);
       host.style.left = `${layout.x}px`;
       host.style.top = `${layout.y}px`;
-      elements.progress.setAttribute('aria-orientation', layout.dock === 'free' ? 'horizontal' : 'vertical');
+      elements.progress.setAttribute('aria-orientation', isVertical() ? 'vertical' : 'horizontal');
       root.querySelectorAll('.dock-button').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.dock === layout.dock)));
       panelPosition();
     }
@@ -266,10 +266,10 @@
       const local = state.model === 'local';
       elements.voiceField.hidden = local;
       elements.hint.textContent = local || state.timingSource === 'native'
-        ? 'Your browser’s voice · Click a word to jump there.'
-        : state.timingSource === 'aligned' ? 'AI voice · Words matched to audio. Click a word to jump there.'
-          : state.syncMode === 'precise' ? 'AI voice · Word sync improves when audio is matched. Click a word to jump there.'
-            : 'AI voice · Estimated word timing. Click a word to jump there.';
+        ? 'Your browser’s voice · Double-click a word to jump there.'
+        : state.timingSource === 'aligned' ? 'AI voice · Words matched to audio. Double-click a word to jump there.'
+          : state.syncMode === 'precise' ? 'AI voice · Word sync improves when audio is matched. Double-click a word to jump there.'
+            : 'AI voice · Estimated word timing. Double-click a word to jump there.';
       elements.sync.checked = state.syncMode !== 'estimated';
       elements.sync.disabled = local;
       elements.syncHelp.textContent = local ? 'Browser voices provide their own word timing.' : 'Adds a small transcription request to match words to the audio.';
@@ -308,9 +308,9 @@
       elements.speed.setAttribute('aria-valuetext', `${Number(state.speed.toFixed(2))} times normal speed`);
       elements.speedOutput.textContent = speedText;
       elements.speedToggle.textContent = speedText;
-      elements.speedToggle.setAttribute('aria-label', `Reading speed ${speedText}. Adjust speed`);
+      elements.speedToggle.setAttribute('aria-label', `Reading speed ${speedText}. Change to ${speedLabel(nextSpeed(state.speed))}`);
+      elements.speedToggle.title = `Change speed to ${speedLabel(nextSpeed(state.speed))}`;
       paintRange(elements.speed, state.speed, 0.75, 4);
-      root.querySelectorAll('.preset').forEach(button => button.setAttribute('aria-pressed', String(Math.abs(Number(button.dataset.speed) - state.speed) < 0.005)));
       elements.model.value = state.model;
       elements.follow.checked = Boolean(state.follow);
       renderVoices();
@@ -332,13 +332,11 @@
       }
     }
 
-    function setDrawer(open, focusSpeed = false) {
+    function setDrawer(open) {
       drawerOpen = open;
       elements.drawer.hidden = !open;
       elements.settingsToggle.setAttribute('aria-expanded', String(open));
-      elements.speedToggle.setAttribute('aria-expanded', String(open));
       if (open) panelPosition();
-      if (open && focusSpeed) elements.speed.focus();
     }
 
     function changeSettings(changes) {
@@ -360,6 +358,16 @@
       window.removeEventListener('pointercancel', endDrag);
       if (moved) {
         suppressOrbClick = wasOrb;
+        suppressPointerClickUntil = performance.now() + 300;
+        if (event?.type === 'pointerup') {
+          // Use the drop point, not the far end of the wide toolbar, to choose an edge.
+          const edges = [
+            ['left', event.clientX], ['right', window.innerWidth - event.clientX],
+            ['top', event.clientY], ['bottom', window.innerHeight - event.clientY],
+          ].sort((a, b) => a[1] - b[1]);
+          layout.dock = edges[0][1] <= 48 ? edges[0][0] : 'free';
+          applyLayout();
+        }
         emit('layout', { ...layout });
       }
     }
@@ -369,6 +377,7 @@
       const dx = event.clientX - drag.startX, dy = event.clientY - drag.startY;
       if (!drag.moved && Math.hypot(dx, dy) < 4) return;
       event.preventDefault();
+      if (!drag.moved) setDrawer(false);
       drag.moved = true;
       layout = { ...layout, dock: 'free', x: drag.x + dx, y: drag.y + dy };
       applyLayout();
@@ -408,14 +417,13 @@
     }
     root.querySelectorAll('.dock-button').forEach(button => button.addEventListener('click', () => {
       const dock = button.dataset.dock;
-      changeLayout(dock === 'free' ? { dock, x: undefined, y: undefined } : { dock, y: 80 });
+      changeLayout(dock === 'left' || dock === 'right' ? { dock, y: 80 } : { dock, x: undefined, y: undefined });
     }));
     elements.settingsToggle.addEventListener('click', () => setDrawer(!drawerOpen));
-    elements.speedToggle.addEventListener('click', () => setDrawer(!drawerOpen, true));
+    elements.speedToggle.addEventListener('click', () => changeSettings({ speed: nextSpeed(state.speed) }));
     get('.drawer-dismiss').addEventListener('click', () => { setDrawer(false); elements.settingsToggle.focus(); });
     get('.advanced').addEventListener('toggle', () => { if (drawerOpen) panelPosition(); });
     elements.speed.addEventListener('input', () => changeSettings({ speed: Number(elements.speed.value) }));
-    root.querySelectorAll('.preset').forEach(button => button.addEventListener('click', () => changeSettings({ speed: Number(button.dataset.speed) })));
     elements.model.addEventListener('change', () => {
       const model = elements.model.value;
       const changes = { model };
@@ -471,6 +479,14 @@
         elements.settingsToggle.focus();
       }
     });
+    root.addEventListener('click', event => {
+      // A drop must not activate a control that moved beneath the pointer.
+      if (event.detail > 0 && performance.now() < suppressPointerClickUntil) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        suppressOrbClick = false;
+      }
+    }, true);
     host.addEventListener('click', event => event.stopPropagation());
     const resize = () => { if (!destroyed) applyLayout(); };
     window.addEventListener('resize', resize, { passive: true });

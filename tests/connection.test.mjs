@@ -54,6 +54,8 @@ async function setupOptions(connection={mode:'local'}){
  const stored={settings:{},hermesConnection:connection};let granted=true,requests=0;
  dom.window.chrome={storage:{local:{get:async()=>stored,set:async value=>Object.assign(stored,value)}},permissions:{request:async()=>{requests++;return granted;},remove:async()=>true}};
  dom.window.HermesSpeech={health:async()=>({configured:Boolean(stored.hermesConnection.apiKey),running:true,mode:stored.hermesConnection.mode})};
+ let cacheEntries=2;
+ dom.window.HermesAudioCache={stats:async()=>({available:true,bytes:cacheEntries*1048576,entries:cacheEntries}),clear:async()=>{cacheEntries=0;return true;}};
  dom.window.eval(optionsSource);await tick();
  return {dom,stored,deny:()=>{granted=false;},requests:()=>requests};
 }
@@ -74,4 +76,13 @@ test('saving local helper mode never copies a newly entered key into Chrome',asy
  const {dom,stored,requests}=await setupOptions();const doc=dom.window.document;
  doc.querySelector('#api-key').value='sk-'+'x'.repeat(32);doc.querySelector('#save-connection').click();await tick();
  assert.equal(requests(),0);assert.equal(stored.hermesConnection.mode,'local');assert.equal(stored.hermesConnection.apiKey,undefined);assert.equal(doc.querySelector('#api-key').value,'');dom.window.close();
+});
+test('clearing saved audio leaves connection and voice preferences untouched',async()=>{
+ const {dom,stored}=await setupOptions({mode:'direct',apiKey:'development-only-token'});const doc=dom.window.document;
+ const before=JSON.stringify(stored);
+ assert.match(doc.querySelector('#cache-status').textContent,/2.0 MiB.*2 saved passages/);
+ doc.querySelector('#clear-cache').click();await tick();
+ assert.match(doc.querySelector('#cache-status').textContent,/0.0 MiB.*0 saved passages/);
+ assert.match(doc.querySelector('#cache-result').textContent,/Saved audio cleared/);
+ assert.equal(JSON.stringify(stored),before);dom.window.close();
 });

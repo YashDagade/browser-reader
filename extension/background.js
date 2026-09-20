@@ -16,7 +16,7 @@ function settingsOnly(value={}) {
   if(['precise','estimated'].includes(value.syncMode))result.syncMode=value.syncMode;
   if(value.layout && typeof value.layout==='object') {
     const layout=value.layout;
-    result.layout={dock:['free','left','right'].includes(layout.dock)?layout.dock:'free',collapsed:!!layout.collapsed};
+    result.layout={dock:['free','left','right','top','bottom'].includes(layout.dock)?layout.dock:'free',collapsed:!!layout.collapsed};
     for(const k of ['x','y'])if(Number.isFinite(layout[k]))result.layout[k]=clamp(layout[k],0,100000);
   }
   return result;
@@ -99,7 +99,10 @@ async function restore() {
   const saved=await chrome.storage.session.get(['current','playback']);
   if(saved.current) {
     current=saved.current;
-    if(saved.playback?.sessionId===current.sessionId)current.state={...current.state,...saved.playback.state};
+    if(saved.playback?.sessionId===current.sessionId) {
+      current.state={...current.state,...saved.playback.state};
+      if(current.state.settings)current.settings={...current.settings,...settingsOnly(current.state.settings)};
+    }
   }
 }
 async function control(message,sender) {
@@ -109,11 +112,13 @@ async function control(message,sender) {
     if(!sender.tab?.id||!a||!Array.isArray(a.chunks)||a.chunks.length>20000)throw Error('Invalid article.');
     await stopCurrent(true);
     if(current&&current.sessionId!==message.sessionId)await emit({status:'stopped'});
-    current={sessionId:message.sessionId,tabId:sender.tab.id,chunks:a.chunks,title:a.title,lang:a.lang,totalWords:a.totalWords,settings:{...DEFAULTS,...settingsOnly(message.settings)},state:{status:'ready',wordIndex:0,totalWords:a.totalWords}};
+    const index=clamp(Math.floor(Number(message.wordIndex)||0),0,Math.max(0,a.totalWords-1));
+    current={sessionId:message.sessionId,tabId:sender.tab.id,documentId:sender.documentId,url:sender.url||sender.tab.url||'',chunks:a.chunks,title:a.title,lang:a.lang,totalWords:a.totalWords,settings:{...DEFAULTS,...settingsOnly(message.settings)},state:{status:index?'paused':'ready',wordIndex:index,totalWords:a.totalWords}};
+    lastStatus='';
     await chrome.storage.session.set({current});await chrome.storage.session.remove('playback');
     return {ok:true,...await health()};
   }
-  if(!current||message.sessionId!==current.sessionId||sender.tab?.id!==current.tabId)return {error:'This reader is no longer active. Close and reopen Hermes on this page.'};
+  if(!current||message.sessionId!==current.sessionId||sender.tab?.id!==current.tabId||(current.documentId&&sender.documentId&&sender.documentId!==current.documentId))return {code:'STALE_SESSION',error:'The reading session needs to reconnect.'};
   const action=message.action;
   if(action==='close') {
     await stopCurrent(true);await emit({status:'stopped'});current=null;
@@ -123,7 +128,7 @@ async function control(message,sender) {
   if(action==='settings') {
     const previous=current.settings;
     current.settings={...previous,...settingsOnly(message.settings)};
-    await chrome.storage.local.set({settings:current.settings});await chrome.storage.session.set({current});
+    await chrome.storage.local.set({settings:current.settings});
     const wasPlaying=['playing','loading'].includes(current.state.status), index=current.state.wordIndex||0;
     const contexts=await chrome.runtime.getContexts({contextTypes:['OFFSCREEN_DOCUMENT']});
     if(previous.model!==current.settings.model) {
@@ -172,8 +177,12 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
   if(message.type==='layout') {
     if(!sender.tab)return;
     enqueue(async()=>{
+      await restore();
       const settings=await preferences();Object.assign(settings,settingsOnly({layout:message.layout}));
-      await chrome.storage.local.set({settings});if(current?.tabId===sender.tab.id)current.settings.layout=settings.layout;
+      await chrome.storage.local.set({settings});
+      if(current?.tabId===sender.tab.id&&(!current.documentId||!sender.documentId||current.documentId===sender.documentId)) {
+        current.settings.layout=settings.layout;await emit({settings:current.settings});
+      }
       reply({ok:true});
     });return true;
   }
@@ -202,6 +211,18 @@ chrome.alarms.onAlarm.addListener(alarm=>enqueue(async()=>{
   if(current&&!['playing','loading'].includes(current.state.status))await stopCurrent(true);
 }));
 chrome.tabs.onRemoved.addListener(id=>enqueue(async()=>{await restore();if(current?.tabId===id){await stopCurrent(true);current=null;await chrome.storage.session.remove(['current','playback']);}}));
+// Fragment navigation and same-document load notifications must not end narration.
+// A reply from the original document proves that its reader is still alive.
 chrome.tabs.onUpdated.addListener((id,change)=>enqueue(async()=>{
-  if(change.status==='loading'){await restore();if(current?.tabId===id){await stopCurrent(true);await emit({status:'stopped'});current=null;await chrome.storage.session.remove(['current','playback']);}}
+  if(change.status!=='complete')return;
+  await restore();if(current?.tabId!==id)return;
+  const session=current;
+  try {
+    const options=session.documentId?{documentId:session.documentId}:undefined;
+    const response=await chrome.tabs.sendMessage(id,{type:'hermes-probe',sessionId:session.sessionId},options);
+    if(response?.sessionId===session.sessionId)return;
+  } catch { /* The original document was replaced or discarded. */ }
+  if(current!==session)return;
+  await stopCurrent(true);current=null;
+  await chrome.storage.session.remove(['current','playback']);
 }));

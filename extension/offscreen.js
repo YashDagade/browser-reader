@@ -202,6 +202,7 @@
         entry.alignedTimings = aligned.boundaries;
         entry.timings = aligned.boundaries;
         entry.timingSource = 'aligned';
+        persistAudio(entry);
         if (entry.index === currentChunk && status === 'playing') {
           updateWord();
           publish();
@@ -234,12 +235,52 @@
     wordIndex = Math.min(chunk.end - 1, chunk.start + low);
   }
 
+  function persistAudio(entry) {
+    if (!entry.diskKey || !entry.blob || !globalThis.HermesAudioCache) return;
+    // IndexedDB stores a Blob reference and numeric timings, never source text.
+    const saved = { blob: entry.blob, duration: entry.duration,
+      estimatedTimings: entry.estimatedTimings,
+      ...(entry.alignedTimings ? { alignedTimings: entry.alignedTimings } : {}) };
+    Promise.resolve(globalThis.HermesAudioCache.put(entry.diskKey, saved)).catch(() => {});
+  }
+
+  function installAudio(entry) {
+    entry.bytes = entry.blob.size;
+    entry.timings = settings.syncMode === 'precise' && entry.alignedTimings ? entry.alignedTimings : entry.estimatedTimings;
+    entry.timingSource = entry.alignedTimings ? 'aligned' : 'estimated';
+    if (entry.alignedTimings) entry.alignmentPhase = 'ready';
+    entry.url = URL.createObjectURL(entry.blob);
+    secondsPerWord = secondsPerWord * 0.65 + entry.duration / Math.max(1, chunks[entry.index].end - chunks[entry.index].start) * 0.35;
+    enforceByteBudget();
+    if (cache.get(entry.index) !== entry) throw abortError();
+    scheduleAlignment(entry, entry.index === chunkForWord(wordIndex));
+    return entry;
+  }
+
   async function requestSpeech(entry) {
     const controller = new AbortController();
     entry.controller = controller;
     // A hung local service must not leave playback stuck in Loading indefinitely.
     const timeout = setTimeout(() => controller.abort('timeout'), 90000);
     try {
+      if (globalThis.HermesAudioCache) {
+        try {
+          entry.diskKey = await globalThis.HermesAudioCache.keyFor(entry.payload);
+          const saved = entry.diskKey ? await globalThis.HermesAudioCache.get(entry.diskKey) : null;
+          if (entry.generation !== generation || cache.get(entry.index) !== entry || controller.signal.aborted) throw abortError();
+          if (saved?.blob?.size <= MAX_CACHE_BYTES && saved.estimatedTimings?.length === chunks[entry.index].end - chunks[entry.index].start + 1) {
+            entry.duration = saved.duration;
+            entry.estimatedTimings = saved.estimatedTimings;
+            entry.alignedTimings = saved.alignedTimings || null;
+            entry.blob = saved.blob;
+            return installAudio(entry);
+          }
+        } catch (cause) {
+          if (cause?.name === 'AbortError') throw cause;
+          // Quota restrictions or disabled storage never prevent reading.
+        }
+      }
+      if (entry.generation !== generation || cache.get(entry.index) !== entry || controller.signal.aborted) throw abortError();
       if (!globalThis.HermesSpeech?.speech) throw new Error('The speech connection could not be loaded. Reload the extension.');
       const response = await globalThis.HermesSpeech.speech(entry.payload, controller.signal);
       if (!response.ok) {
@@ -258,16 +299,10 @@
       entry.duration = entry.window.duration;
       if (!entry.duration) throw new Error('The speech service returned unsupported audio. Please try again.');
       entry.estimatedTimings = timing.estimate(entry.text, entry.duration, entry.window);
-      entry.timings = entry.estimatedTimings;
-      entry.timingSource = 'estimated';
-      entry.bytes = buffer.byteLength;
       entry.blob = new Blob([buffer], { type: 'audio/wav' });
-      entry.url = URL.createObjectURL(entry.blob);
-      secondsPerWord = secondsPerWord * 0.65 + entry.duration / Math.max(1, chunks[entry.index].end - chunks[entry.index].start) * 0.35;
-      enforceByteBudget();
-      if (cache.get(entry.index) !== entry) throw abortError();
-      scheduleAlignment(entry, entry.index === chunkForWord(wordIndex));
-      return entry;
+      // Save only complete, validated responses. Playback does not await disk I/O.
+      persistAudio(entry);
+      return installAudio(entry);
     } catch (cause) {
       if (controller.signal.aborted && controller.signal.reason === 'timeout') {
         throw new Error('The speech request timed out. Check your connection and try again.');

@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
+import { webcrypto } from 'node:crypto';
+import { IDBFactory } from 'fake-indexeddb';
 
 const timingSource = await readFile(new URL('../extension/timing.js', import.meta.url), 'utf8');
+const cacheSource = await readFile(new URL('../extension/audio-cache.js', import.meta.url), 'utf8');
 const source = await readFile(new URL('../extension/offscreen.js', import.meta.url), 'utf8');
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -26,7 +29,7 @@ function wav(byteLength = 8044) {
   return data;
 }
 
-function harness({ withAlignment = false } = {}) {
+function harness({ withAlignment = false, persistentStore = null } = {}) {
   const requests = [];
   const players = [];
   const alignments = [];
@@ -56,6 +59,7 @@ function harness({ withAlignment = false } = {}) {
   }
   const context = {
     Audio: Player, Blob, DOMException, AbortController, DataView, Uint8Array,
+    ...(persistentStore ? { indexedDB: persistentStore, crypto: webcrypto, TextEncoder } : {}),
     setTimeout, clearTimeout,
     setInterval: (callback) => { const id = ++timerCounter; timers.set(id, callback); return id; },
     clearInterval: (id) => timers.delete(id),
@@ -79,6 +83,7 @@ function harness({ withAlignment = false } = {}) {
     },
   };
   vm.runInNewContext(timingSource, context);
+  if (persistentStore) vm.runInNewContext(cacheSource, context);
   vm.runInNewContext(source, context);
   const command = (action, extra = {}) => {
     let response;
@@ -96,7 +101,7 @@ function harness({ withAlignment = false } = {}) {
     totalWords: count * 4,
     settings: { speed: 1, voice: 'coral', model: 'gpt-4o-mini-tts' },
   });
-  return { command, requests, players, messages, revoked, resolve, load, alignments, timers,
+  return { command, requests, players, messages, revoked, resolve, load, alignments, timers, diskCache: context.HermesAudioCache,
     tick: () => { for (const callback of timers.values()) callback(); } };
 }
 
@@ -362,4 +367,99 @@ test('audio byte budget evicts oversized lookahead while keeping the playing pas
   assert.equal(app.revoked[0], 'blob:reader-2');
   app.command('stop');
   await flush();
+});
+
+
+const until = async (condition) => {
+  for (let i = 0; i < 100; i += 1) {
+    if (condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.fail('Expected asynchronous state did not arrive');
+};
+
+test('completed speech and aligned timings survive stop and a new offscreen document without new API requests', async () => {
+  const persistentStore = new IDBFactory();
+  const first = harness({ withAlignment: true, persistentStore });
+  first.load(1);
+  first.command('play');
+  await until(() => first.requests.length === 1);
+  await first.resolve();
+  await until(() => first.alignments.length === 1);
+  first.alignments[0].resolve({ words: [
+    { word: 'Chunk', start: 0.1, end: 0.2 }, { word: 'zero', start: 0.3, end: 0.5 },
+    { word: 'has', start: 0.6, end: 1.5 }, { word: 'words', start: 2, end: 3.8 },
+  ] });
+  await until(() => first.command('snapshot').timingSource === 'aligned');
+  assert.equal((await first.diskCache.stats()).entries, 1);
+  first.command('unload');
+  const second = harness({ withAlignment: true, persistentStore });
+  second.load(1, 'second-document');
+  second.command('settings', { settings: { speed: 4 } });
+  second.command('play');
+  await until(() => second.command('snapshot').status === 'playing');
+  assert.equal(second.requests.length, 0);
+  assert.equal(second.alignments.length, 0);
+  assert.equal(second.command('snapshot').timingSource, 'aligned');
+  second.command('settings', { settings: { speed: 2 } });
+  assert.equal(second.players[0].playbackRate, 2);
+  assert.equal(second.requests.length, 0);
+  assert.equal(second.alignments.length, 0);
+  second.command('pause');
+  second.command('seek', { wordIndex: 3 });
+  second.command('play');
+  await until(() => second.command('snapshot').status === 'playing');
+  assert.equal(second.players.at(-1).currentTime, 2);
+  second.command('stop');
+});
+
+test('failed and cancelled speech never enters the persistent cache', async () => {
+  const app = harness({ persistentStore: new IDBFactory() });
+  app.load(1);
+  app.command('play');
+  await until(() => app.requests.length === 1);
+  app.requests[0].reject(new Error('Network failed'));
+  await until(() => app.command('snapshot').status === 'error');
+  assert.equal((await app.diskCache.stats()).entries, 0);
+  app.command('play');
+  await until(() => app.requests.length === 2);
+  app.command('stop');
+  await app.resolve(app.requests[1]);
+  assert.equal((await app.diskCache.stats()).entries, 0);
+});
+
+test('cached speech without timings can add alignment once without repeating synthesis', async () => {
+  const persistentStore = new IDBFactory();
+  const first = harness({ persistentStore });
+  first.load(1);
+  first.command('settings', { settings: { syncMode: 'estimated' } });
+  first.command('play');
+  await until(() => first.requests.length === 1);
+  await first.resolve();
+  assert.equal((await first.diskCache.stats()).entries, 1);
+  first.command('stop');
+  const second = harness({ withAlignment: true, persistentStore });
+  second.load(1);
+  second.command('play');
+  await until(() => second.alignments.length === 1);
+  assert.equal(second.requests.length, 0);
+  assert.equal(second.command('snapshot').status, 'playing');
+  second.command('stop');
+  await flush();
+});
+
+
+test('speed changes while synthesis is pending neither abort nor regenerate it', async () => {
+  const app = harness({ persistentStore: new IDBFactory() });
+  app.load(1);
+  app.command('play');
+  await until(() => app.requests.length === 1);
+  const pending = app.requests[0];
+  app.command('settings', { settings: { speed: 4 } });
+  app.command('settings', { settings: { speed: 2.5 } });
+  assert.equal(pending.options.signal.aborted, false);
+  assert.equal(app.requests.length, 1);
+  await app.resolve(pending);
+  assert.equal(app.players[0].playbackRate, 2.5);
+  app.command('stop');
 });

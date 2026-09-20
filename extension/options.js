@@ -19,7 +19,7 @@ async function initialize() {
   model.value = settings.model || 'local'; voice.value = settings.voice || 'alloy';
   $('#instructions').value = settings.instructions || ''; $('#sync-mode').value = settings.syncMode || 'precise';
   mode.value = hermesConnection.mode || 'local'; $('#forget').hidden = !hermesConnection.apiKey;
-  connectionFields(); voiceOptions(); await check();
+  connectionFields(); voiceOptions(); await Promise.all([check(), showCache()]);
 }
 async function savePreferences() {
   voiceOptions();
@@ -76,4 +76,17 @@ async function check() {
   if (new URLSearchParams(location.search).has('restricted')) $('#detail').textContent += ' This Chrome page cannot run the reader. Try a regular article webpage.';
 }
 $('#check').addEventListener('click', check);
+async function showCache() {
+  const state = await globalThis.HermesAudioCache?.stats();
+  $('#cache-status').textContent = state?.available
+    ? `${(state.bytes / 1048576).toFixed(1)} MiB of 32 MiB · ${state.entries} saved passages`
+    : 'Saved audio is unavailable. Reading still works.';
+  $('#clear-cache').disabled = !state?.available;
+}
+$('#clear-cache').addEventListener('click', async () => {
+  $('#clear-cache').disabled = true;
+  const cleared = await globalThis.HermesAudioCache?.clear();
+  await showCache();
+  $('#cache-result').textContent = cleared ? 'Saved audio cleared. Active reading may save new audio.' : 'Could not clear saved audio. Try again.';
+});
 initialize().catch(() => { $('#connection').textContent = 'Could not load setup. Reload this page to try again.'; });

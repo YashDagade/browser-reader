@@ -1,6 +1,6 @@
 {
   "name": "hermes-reader",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "A personal, local-first Chrome article reader",
@@ -16,6 +16,7 @@
     "package": "node scripts/package.mjs"
   },
   "devDependencies": {
+    "fake-indexeddb": "^6.2.5",
     "jsdom": "^26.1.0"
   },
   "engines": {

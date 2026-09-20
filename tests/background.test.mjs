@@ -7,7 +7,7 @@ const source = await readFile(new URL('../extension/background.js', import.meta.
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
 function harness() {
-  let listener, hasOffscreen = false, audioSession = null;
+  let listener, hasOffscreen = false, audioSession = null, documentAlive=true;
   const events = {}, messages = [], spoken = [], audio = [], saved = {}, local = {hermesConnection:{mode:'direct',apiKey:'private-test-value'}}, accesses=[];
   const event = name => ({ addListener: callback => { events[name] = callback; } });
   const clone = value => JSON.parse(JSON.stringify(value));
@@ -23,11 +23,11 @@ function harness() {
     alarms:{create:()=>{},clear:async()=>{},onAlarm:event('alarm')},
     permissions:{contains:async()=>true},
     storage: {
-      session: {get:async key=>Object.fromEntries([].concat(key).map(k=>[k,saved[k]])),set:async value=>Object.assign(saved,clone(value)),remove:async key=>{for(const k of [].concat(key))delete saved[k];}},
+      session: {get:async key=>clone(Object.fromEntries([].concat(key).map(k=>[k,saved[k]]))),set:async value=>Object.assign(saved,clone(value)),remove:async key=>{for(const k of [].concat(key))delete saved[k];}},
       local:{get:async key=>({[key]:local[key]}),set:async value=>Object.assign(local,clone(value)),setAccessLevel:async value=>{accesses.push(value);}},
     },
     tabs: {
-      sendMessage: async (tabId, message) => { messages.push({ tabId, ...clone(message) }); },
+      sendMessage: async (tabId, message) => { messages.push({ tabId, ...clone(message) });if(message.type==='hermes-probe')return documentAlive?{sessionId:message.sessionId}:undefined; },
       onRemoved: event('removed'), onUpdated: event('updated'),
     },
     tts: {
@@ -39,18 +39,19 @@ function harness() {
     commands: { onCommand: event('command') },
     contextMenus: { onClicked: event('context') },
   };
-  vm.runInNewContext(source, {
+  const restartWorker = () => vm.runInNewContext(source, {
     chrome, clearInterval, setInterval, AbortSignal, importScripts:()=>{}, HermesSpeech:{health:async()=>({configured:true,mode:'direct',running:true})},
     fetch: async () => ({ json: async () => ({ configured: true }) }),
   });
-  const command = (action, extra = {}, tabId = 7) => new Promise(resolve => listener({ target: 'background', type: 'control', action, sessionId: 'article', ...extra }, { tab: { id: tabId } }, resolve));
+  restartWorker();
+  const command = (action, extra = {}, tabId = 7) => new Promise(resolve => listener({ target: 'background', type: 'control', action, sessionId: 'article', ...extra }, { tab: { id: tabId }, documentId:'document-'+tabId, url:'https://article.example/essay#intro' }, resolve));
   const load = (model = 'local') => command('load', {
     article: { title: 'Essay', lang: 'en', chunks: [{ text: 'One two three four.', start: 0, end: 4 }, { text: 'Five six seven eight.', start: 4, end: 8 }], totalWords: 8 },
     settings: { model, speed: 1.5 },
   });
   const state = (value, sender = { url: chrome.runtime.getURL('offscreen.html') }, sessionId = 'article') => listener({ target: 'background', type: 'state', sessionId, state: value }, sender, () => {});
   const message=(type,extra={},sender={tab:{id:7}})=>new Promise(resolve=>listener({target:'background',type,...extra},sender,resolve));
-  return {command,load,state,message,spoken,messages,audio,events,saved,local,accesses,hasOffscreen:()=>hasOffscreen,expire:()=>{hasOffscreen=false;audioSession=null;}};
+  return {restartWorker,replaceDocument:()=>{documentAlive=false;},command,load,state,message,spoken,messages,audio,events,saved,local,accesses,hasOffscreen:()=>hasOffscreen,expire:()=>{hasOffscreen=false;audioSession=null;}};
 }
 
 test('local pause and seek invalidate late native voice events and resume at the selected word', async () => {
@@ -76,8 +77,8 @@ test('local pause and seek invalidate late native voice events and resume at the
 test('controls are bound to the active tab and session; only the offscreen page may publish cloud state', async () => {
   const app = harness();
   await app.load('gpt-4o-mini-tts');
-  assert.match((await app.command('play', {}, 8)).error, /no longer active/);
-  assert.match((await app.command('play', { sessionId: 'stale' })).error, /no longer active/);
+  assert.equal((await app.command('play', {}, 8)).code,'STALE_SESSION');
+  assert.equal((await app.command('play', { sessionId: 'stale' })).code,'STALE_SESSION');
   const before = app.messages.length;
   app.state({ status: 'playing', wordIndex: 6 }, { tab: { id: 7 }, url: 'https://article.example/' });
   app.state({ status: 'playing', wordIndex: 6 }, undefined, 'stale');
@@ -145,6 +146,26 @@ test('layout updates do not touch audio; idle release preserves the resume posit
   await app.command('play');assert.equal(app.audio.at(-2).wordIndex,5);
 });
 
+test('a layout change after worker restart persists through a subsequent restore without restarting audio',async()=>{
+  const app=harness();await app.load('gpt-4o-mini-tts');
+  await app.command('settings',{settings:{layout:{dock:'left',collapsed:false}}});
+  app.state({status:'paused',wordIndex:5});await flush();
+  assert.equal(app.saved.playback.state.settings.layout.dock,'left');
+  const audioCount=app.audio.length;
+
+  app.restartWorker();
+  await app.message('layout',{layout:{dock:'right',x:80,y:120,collapsed:false}});
+  assert.equal(app.local.settings.layout.dock,'right');
+  assert.equal(app.saved.playback.state.settings.layout.dock,'right');
+  assert.equal(app.saved.playback.state.wordIndex,5);
+
+  app.restartWorker();
+  app.state({status:'paused',wordIndex:5});await flush();
+  assert.equal(app.messages.at(-1).state.settings.layout.dock,'right');
+  assert.equal(app.messages.at(-1).state.wordIndex,5);
+  assert.equal(app.audio.length,audioCount);
+});
+
 
 test('pause and seek retain a live cloud document instead of reloading the article',async()=>{
   const app=harness();await app.load('gpt-4o-mini-tts');await app.command('play');
@@ -159,4 +180,32 @@ test('replay after idle release starts an ended article from the beginning',asyn
   app.state({status:'ended',wordIndex:7});await flush();app.expire();
   const before=app.audio.length;await app.command('play');
   assert.deepEqual(app.audio.slice(before).map(message=>message.action),['get-state','load','play']);
+});
+
+
+test('same-document loading and fragment navigation preserve the active reading session',async()=>{
+  const app=harness();await app.load('gpt-4o-mini-tts');await app.command('play');
+  const loads=app.audio.filter(m=>m.action==='load').length;
+  app.events.updated(7,{status:'loading',url:'https://article.example/essay#chapter-two'});await flush();
+  app.events.updated(7,{status:'complete'});await flush();
+  assert.ok(app.saved.current);assert.equal(app.hasOffscreen(),true);
+  assert.equal((await app.command('pause')).ok,true);
+  assert.equal(app.audio.filter(m=>m.action==='load').length,loads);
+});
+
+test('a replaced document releases speech while a later page can register normally',async()=>{
+  const app=harness();await app.load('gpt-4o-mini-tts');await app.command('play');
+  app.replaceDocument();app.events.updated(7,{status:'complete'});await flush();
+  assert.equal(app.saved.current,undefined);assert.equal(app.hasOffscreen(),false);
+  assert.equal((await app.command('play')).code,'STALE_SESSION');
+  await app.load('gpt-4o-mini-tts');assert.equal((await app.command('play')).ok,true);
+});
+
+test('reconnecting an article restores its position without audio generation until play',async()=>{
+  const app=harness();await app.load('gpt-4o-mini-tts');
+  const article=app.saved.current;
+  await app.command('close');
+  await app.command('load',{article,settings:article.settings,wordIndex:5});
+  assert.equal(app.saved.current.state.wordIndex,5);assert.equal(app.hasOffscreen(),false);
+  await app.command('play');assert.equal(app.audio.at(-2).wordIndex,5);
 });

@@ -6,7 +6,29 @@
   const scrollParents=new WeakMap();
   const highlightStyle = document.createElement('style');
   highlightStyle.textContent = '::highlight(hermes-word){background:#f2cf69;color:#111;text-decoration:underline;text-decoration-color:#aa8321}::highlight(hermes-context){background:rgba(242,207,105,.12)}';
-  const send = (action, payload={}) => chrome.runtime.sendMessage({target:'background', type:'control', action, sessionId, ...payload});
+  const rawSend = (action, payload={}) => chrome.runtime.sendMessage({target:'background', type:'control', action, sessionId, ...payload});
+  let reconnecting=null;
+  const sourcePayload=()=>({article:{title:article.title,lang:article.lang,chunks:article.chunks,totalWords:article.words.length},settings});
+  async function send(action,payload={}) {
+    const requestedSession=sessionId;
+    let result=await rawSend(action,payload);
+    if(sessionId!==requestedSession||closed)return {ok:true};
+    if(result?.code!=='STALE_SESSION'||!article||!['play','seek','settings'].includes(action))return result;
+    if(!reconnecting||reconnecting.sessionId!==requestedSession) {
+      const index=state.status==='ended'?0:state.wordIndex||0;
+      const pending={sessionId:requestedSession};
+      pending.promise=rawSend('load',{...sourcePayload(),wordIndex:index}).then(reply=>{
+        if(sessionId!==requestedSession||closed)return;
+        if(reply?.error)throw Error(reply.error);
+        update({status:'paused',wordIndex:index,error:'',remainingSeconds:undefined,connected:reply?.configured});
+      }).finally(()=>{if(reconnecting===pending)reconnecting=null;});
+      reconnecting=pending;
+    }
+    await reconnecting.promise;
+    if(closed||sessionId!==requestedSession)return {ok:true};
+    result=await rawSend(action,payload);
+    return result;
+  }
   function clearHighlight() {
     globalThis.CSS?.highlights?.delete('hermes-word');
     globalThis.CSS?.highlights?.delete('hermes-context');
@@ -16,28 +38,34 @@
     if(scrollParents.has(element))return scrollParents.get(element);
     const targets=[];
     for(let parent=element?.parentElement;parent&&parent!==document.body;parent=parent.parentElement) {
-      if(parent.scrollHeight>parent.clientHeight+2&&/(auto|scroll)/.test(getComputedStyle(parent).overflowY))targets.push(parent);
+      if(parent.scrollHeight>parent.clientHeight+2&&/(auto|scroll|hidden)/.test(getComputedStyle(parent).overflowY))targets.push(parent);
     }
     scrollParents.set(element,targets);return targets;
   }
   function followWord(range,force=false) {
     if(!settings.follow||document.hidden||(!force&&Date.now()<manualScrollUntil))return;
-    if(!force&&Date.now()-lastScroll<250)return;
+    if(!force&&Date.now()-lastScroll<450)return;
     const element=range.startContainer.parentElement;
     const behavior=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'instant':'smooth';
     // Scroll the word itself, rather than centering a potentially very tall paragraph.
     for(const parent of scrollTargets(element)) {
       const rect=range.getBoundingClientRect(), box=parent.getBoundingClientRect();
-      if(rect.top<box.top+24||rect.bottom>box.bottom-40) {
-        parent.scrollBy({top:rect.top-box.top-parent.clientHeight*.4,behavior});lastScroll=Date.now();return;
+      if(rect.top<box.top+24||rect.bottom>box.top+parent.clientHeight*.75) {
+        const desired=rect.top-box.top-parent.clientHeight*.4;
+        const available=desired>0?parent.scrollHeight-parent.clientHeight-parent.scrollTop:parent.scrollTop;
+        const delta=Math.sign(desired)*Math.min(Math.abs(desired),Math.max(0,available));
+        if(Math.abs(delta)>.5){parent.scrollBy({top:delta,behavior});lastScroll=Date.now();return;}
       }
     }
     const rect=range.getBoundingClientRect();
-    let bottom=innerHeight-60;
+    let top=60, bottom=innerHeight*.75;
     const widget=ui?.host.getBoundingClientRect();
-    if(widget&&widget.width<innerWidth&&widget.left<rect.right&&widget.right>rect.left&&widget.top>innerHeight*.5)bottom=Math.min(bottom,widget.top-24);
-    if(rect.top<60||rect.bottom>bottom) {
-      globalThis.scrollBy({top:rect.top-Math.max(80,bottom*.4),behavior});lastScroll=Date.now();
+    if(widget&&widget.width<innerWidth&&widget.left<rect.right&&widget.right>rect.left) {
+      if(widget.top>innerHeight*.5)bottom=Math.min(bottom,widget.top-24);
+      else if(widget.bottom<innerHeight*.5)top=Math.max(top,widget.bottom+24);
+    }
+    if(rect.top<top||rect.bottom>bottom) {
+      globalThis.scrollBy({top:rect.top-Math.max(top+30,innerHeight*.38),behavior});lastScroll=Date.now();
     }
   }
   function highlight(index,force=false) {
@@ -47,8 +75,8 @@
     if(index!==lastWord||force) {
       lastWord=index;
       if(globalThis.CSS?.highlights&&globalThis.Highlight)CSS.highlights.set('hermes-word',new Highlight(range));
-      followWord(range,force);
     }
+    followWord(range,force);
   }
   function update(next) {
     state={...state,...next};
@@ -66,7 +94,7 @@
     ui=ReaderUI.create({title:article.title,totalWords:article.words.length,settings,onAction});
     if (!highlightStyle.isConnected) document.documentElement.append(highlightStyle);
     closed=false;
-    const result=await send('load',{article:{title:article.title,lang:article.lang,chunks:article.chunks,totalWords:article.words.length},settings});
+    const result=await rawSend('load',sourcePayload());
     if (result?.error) update({status:'error',error:result.error});
     else update({status:'ready',connected:result?.configured});
   }
@@ -99,19 +127,21 @@
         const idx=Math.max(0,Math.min(article.chunks.length-1,current+(action==='next'?1:-1)));
         action='seek';payload={wordIndex:article.chunks[idx]?.start||0};
       }
+      if (action==='play') {manualScrollUntil=0;highlight(state.wordIndex||0,true);}
       if (action==='play' && !article.words.length) throw Error('Select some article text, or paste text in the reader settings.');
       const result=await send(action,payload);
       if (result?.error) throw Error(result.error);
     } catch(error) { update({status:'error',error:error.message||'Reader connection failed. Reload this page and try again.'}); }
   }
   chrome.runtime.onMessage.addListener((message,_sender,reply)=>{
+    if(message.type==='hermes-probe') {reply({sessionId:closed?null:sessionId});return;}
     if (message.type==='hermes-open') { open(message).then(()=>reply({ok:true}));return true; }
     if (message.type==='hermes-state' && message.sessionId===sessionId) {
       if (message.state.settings) settings={...settings,...message.state.settings};
       update(message.state);
     }
   });
-  document.addEventListener('click',event=>{
+  document.addEventListener('dblclick',event=>{
     if(closed || !article || event.defaultPrevented || event.button!==0 || event.metaKey || event.ctrlKey) return;
     if(event.composedPath().includes(ui?.host) || event.target.closest?.('a,button,input,textarea,select,[contenteditable=true]')) return;
     const point=document.caretRangeFromPoint?.(event.clientX,event.clientY);
@@ -131,8 +161,8 @@
     if(event.altKey && event.code==='Space') { event.preventDefault();onAction(state.status==='playing'?'pause':'play'); }
     if(event.key==='Escape' && !event.ctrlKey && !event.metaKey) onAction('pause');
   });
-  addEventListener('pagehide',()=>{if(sessionId)send('close').catch(()=>{});ui?.destroy();ui=null;closed=true;sessionId=null;article=null;clearHighlight();});
-  const userScrolled=()=>{manualScrollUntil=Date.now()+5000;};
+  addEventListener('pagehide',()=>{if(sessionId)send('close').catch(()=>{});ui?.destroy();ui=null;closed=true;sessionId=null;article=null;clearHighlight();highlightStyle.remove();});
+  const userScrolled=()=>{manualScrollUntil=Date.now()+1200;};
   document.addEventListener('wheel',userScrolled,{passive:true});
   document.addEventListener('touchmove',userScrolled,{passive:true});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!closed){lastWord=-1;update({});}});
