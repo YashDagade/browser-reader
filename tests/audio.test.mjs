@@ -3,17 +3,18 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
 
+const timingSource = await readFile(new URL('../extension/timing.js', import.meta.url), 'utf8');
 const source = await readFile(new URL('../extension/offscreen.js', import.meta.url), 'utf8');
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-function wav() {
-  const data = new ArrayBuffer(8044);
+function wav(byteLength = 8044) {
+  const data = new ArrayBuffer(byteLength);
   const bytes = new Uint8Array(data);
   const view = new DataView(data);
   for (const [offset, text] of [[0, 'RIFF'], [8, 'WAVE'], [12, 'fmt '], [36, 'data']]) {
     for (let index = 0; index < text.length; index += 1) bytes[offset + index] = text.charCodeAt(index);
   }
-  view.setUint32(4, 8036, true);
+  view.setUint32(4, byteLength - 8, true);
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true);
   view.setUint16(22, 1, true);
@@ -21,17 +22,20 @@ function wav() {
   view.setUint32(28, 2000, true);
   view.setUint16(32, 2, true);
   view.setUint16(34, 16, true);
-  view.setUint32(40, 8000, true);
+  view.setUint32(40, byteLength - 44, true);
   return data;
 }
 
-function harness() {
+function harness({ withAlignment = false } = {}) {
   const requests = [];
   const players = [];
+  const alignments = [];
+  const timers = new Map();
+  let timerCounter = 0;
   const messages = [];
   const revoked = [];
   let listener;
-  let tick;
+
   let urlCounter = 0;
   class Player {
     constructor(url) {
@@ -52,19 +56,29 @@ function harness() {
   }
   const context = {
     Audio: Player, Blob, DOMException, AbortController, DataView, Uint8Array,
-    setTimeout, clearTimeout, setInterval: (callback) => { tick = callback; },
+    setTimeout, clearTimeout,
+    setInterval: (callback) => { const id = ++timerCounter; timers.set(id, callback); return id; },
+    clearInterval: (id) => timers.delete(id),
     navigator: {},
     URL: { createObjectURL: () => `blob:reader-${++urlCounter}`, revokeObjectURL: (url) => revoked.push(url) },
     chrome: { runtime: {
       onMessage: { addListener: (callback) => { listener = callback; } },
       sendMessage: (message) => { messages.push(message); return Promise.resolve(); },
     } },
-    fetch: (url, options) => new Promise((resolve, reject) => {
-      const request = { url, options, resolve, reject, body: JSON.parse(options.body) };
-      options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
-      requests.push(request);
-    }),
+    HermesSpeech: {
+      speech: (body, signal) => new Promise((resolve, reject) => {
+        const request = { options: { signal }, resolve, reject, body };
+        signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+        requests.push(request);
+      }),
+      ...(withAlignment ? { align: (body, buffer, signal) => new Promise((resolve, reject) => {
+        const request = { body, buffer, signal, resolve, reject };
+        signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+        alignments.push(request);
+      }) } : {}),
+    },
   };
+  vm.runInNewContext(timingSource, context);
   vm.runInNewContext(source, context);
   const command = (action, extra = {}) => {
     let response;
@@ -72,8 +86,8 @@ function harness() {
     assert.equal(response?.ok, true);
     return response.state;
   };
-  const resolve = async (request = requests[0]) => {
-    request.resolve({ ok: true, arrayBuffer: async () => wav() });
+  const resolve = async (request = requests[0], buffer = wav()) => {
+    request.resolve({ ok: true, arrayBuffer: async () => buffer });
     await flush();
   };
   const load = (count = 8, sessionId = 'test') => command('load', {
@@ -82,7 +96,8 @@ function harness() {
     totalWords: count * 4,
     settings: { speed: 1, voice: 'coral', model: 'gpt-4o-mini-tts' },
   });
-  return { command, requests, players, messages, revoked, resolve, load, tick: () => tick() };
+  return { command, requests, players, messages, revoked, resolve, load, alignments, timers,
+    tick: () => { for (const callback of timers.values()) callback(); } };
 }
 
 test('loading is free; speech starts only on Play and obeys concurrency bound', async () => {
@@ -92,7 +107,6 @@ test('loading is free; speech starts only on Play and obeys concurrency bound', 
   app.command('play');
   assert.equal(app.requests.length, 2);
   assert.equal(app.requests[0].body.text, 'Chunk 0 has words.');
-  assert.equal(app.requests[0].options.headers['X-Reader-Client'], 'browser-reader-v1');
   assert.equal(app.requests[0].body.speed, undefined);
   await app.resolve();
   assert.equal(app.players.length, 1);
@@ -194,6 +208,158 @@ test('far seek cancels unrelated lookahead and prioritizes the requested chunk',
   await app.resolve(app.requests[2]);
   assert.equal(app.command('snapshot').wordIndex, 24);
   assert.equal(app.command('snapshot').status, 'playing');
+  app.command('stop');
+  await flush();
+});
+
+
+test('no polling while idle or paused; stop and unload release timers and article state', async () => {
+  const app = harness();
+  app.load(1);
+  assert.equal(app.timers.size, 0);
+  assert.equal(app.command('get-state').sessionId, 'test');
+  app.command('play');
+  await app.resolve();
+  assert.equal(app.timers.size, 1);
+  app.command('pause');
+  assert.equal(app.timers.size, 0);
+  app.command('play');
+  await flush();
+  assert.equal(app.timers.size, 1);
+  const before = app.messages.length;
+  const unloaded = app.command('unload');
+  assert.equal(app.messages.length, before, 'unloading must not overwrite retained background position');
+  assert.equal(unloaded.totalWords, 0);
+  assert.equal(app.command('get-state').sessionId, null);
+  assert.equal(app.timers.size, 0);
+  assert.equal(app.revoked.length, 1);
+});
+
+test('alignment never delays playback and refines the current word once available', async () => {
+  const app = harness({ withAlignment: true });
+  app.load(1);
+  app.command('play');
+  await app.resolve();
+  assert.equal(app.command('snapshot').status, 'playing');
+  assert.equal(app.command('snapshot').timingSource, 'estimated');
+  assert.equal(app.alignments.length, 1);
+  app.players[0].currentTime = 0.8;
+  app.alignments[0].resolve({ words: [
+    { word: 'Chunk', start: 0.1, end: 0.2 }, { word: 'zero', start: 0.3, end: 0.5 },
+    { word: 'has', start: 0.6, end: 1.5 }, { word: 'words', start: 2, end: 3.8 },
+  ] });
+  await flush();
+  assert.equal(app.command('snapshot').timingSource, 'aligned');
+  assert.equal(app.command('snapshot').wordIndex, 2);
+  app.command('pause');
+  app.command('seek', { wordIndex: 3 });
+  app.command('play');
+  await flush();
+  assert.equal(app.players.at(-1).currentTime, 2);
+  app.command('stop');
+  await flush();
+});
+
+test('estimated mode makes no alignment requests; alignment failure leaves speech playing', async () => {
+  const app = harness({ withAlignment: true });
+  app.load(1);
+  app.command('settings', { settings: { syncMode: 'estimated' } });
+  app.command('play');
+  await app.resolve();
+  assert.equal(app.alignments.length, 0);
+  app.command('settings', { settings: { syncMode: 'precise' } });
+  await flush();
+  assert.equal(app.alignments.length, 1);
+  app.alignments[0].reject(new Error('Transcription unavailable'));
+  await flush();
+  assert.equal(app.command('snapshot').status, 'playing');
+  assert.equal(app.command('snapshot').error, null);
+  assert.equal(app.command('snapshot').timingSource, 'estimated');
+  app.command('stop');
+  await flush();
+});
+
+test('seeking cancels old alignment and stale results cannot move the new position', async () => {
+  const app = harness({ withAlignment: true });
+  app.load();
+  app.command('play');
+  await app.resolve();
+  const previous = app.alignments[0];
+  assert.ok(previous);
+  app.command('seek', { wordIndex: 24 });
+  assert.equal(previous.signal.aborted, true);
+  previous.resolve({ words: [{ word: 'Chunk', start: 0, end: 1 }] });
+  await flush();
+  assert.equal(app.command('snapshot').wordIndex, 24);
+  assert.equal(app.command('snapshot').timingSource, 'estimated');
+  app.command('stop');
+  await flush();
+});
+
+test('remaining duration uses measured audio, advances during speech, and scales immediately with speed', async () => {
+  const app = harness();
+  app.load(1);
+  app.command('play');
+  await app.resolve();
+  assert.equal(app.command('snapshot').remainingSeconds, 4);
+  app.players[0].currentTime = 1.3;
+  app.tick();
+  assert.equal(app.command('snapshot').remainingSeconds, 2.7);
+  app.command('settings', { settings: { speed: 3 } });
+  assert.ok(Math.abs(app.command('snapshot').remainingSeconds - 0.9) < 0.0001);
+  app.players[0].onended();
+  assert.equal(app.command('snapshot').remainingSeconds, 0);
+  assert.equal(app.timers.size, 0);
+  assert.equal(app.revoked.length, 1);
+});
+
+test('instructions invalidate generated audio while speed and sync options do not', async () => {
+  const app = harness();
+  app.load(1);
+  app.command('play');
+  await app.resolve();
+  app.players[0].currentTime = 2;
+  app.tick();
+  const word = app.command('snapshot').wordIndex;
+  app.command('settings', { settings: { instructions: 'Physics article; pronounce the symbols clearly.' } });
+  await flush();
+  assert.equal(app.requests.length, 2);
+  assert.equal(app.requests[1].body.instructions, 'Physics article; pronounce the symbols clearly.');
+  assert.equal(app.command('snapshot').wordIndex, word);
+  await app.resolve(app.requests[1]);
+  const requests = app.requests.length;
+  app.command('settings', { settings: { speed: 2, syncMode: 'estimated' } });
+  assert.equal(app.requests.length, requests);
+  app.command('stop');
+  await flush();
+});
+
+test('alignment is bounded to one request and stop cancels preparation', async () => {
+  const app = harness({ withAlignment: true });
+  app.load(8);
+  app.command('play');
+  await app.resolve(app.requests[0]);
+  await app.resolve(app.requests[1]);
+  await app.resolve(app.requests[2]);
+  assert.equal(app.alignments.length, 1);
+  app.command('stop');
+  await flush();
+  assert.equal(app.alignments[0].signal.aborted, true);
+  assert.equal(app.alignments.length, 1);
+  assert.equal(app.revoked.length, 3);
+});
+
+
+test('audio byte budget evicts oversized lookahead while keeping the playing passage', async () => {
+  const app = harness();
+  app.load(3);
+  app.command('play');
+  await app.resolve(app.requests[0], wav(7 * 1024 * 1024));
+  await app.resolve(app.requests[1], wav(7 * 1024 * 1024));
+  assert.equal(app.command('snapshot').status, 'playing');
+  assert.equal(app.players[0].paused, false);
+  assert.equal(app.revoked.length, 1, '14 MiB of cache must evict at least one passage');
+  assert.equal(app.revoked[0], 'blob:reader-2');
   app.command('stop');
   await flush();
 });

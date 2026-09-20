@@ -1,85 +1,84 @@
-# Tempo
+# Hermes
 
-**More reading. Less friction.** A small Chrome extension that reads articles aloud, highlights the current word, and stays out of the way.
+**Your reading. At your pace.** A small Chrome extension for listening to articles, essays, and technical writing without leaving the page.
 
-Built for essays, blog posts, and technical reading. Open a page, click Tempo, and press **Start reading**. Use a browser voice immediately, or connect OpenAI for a more expressive voice. There is no account system, hosted backend, or build step.
+Click **Start reading**, follow the highlighted words, and change speed from **0.75× to 4×**. Use an installed browser voice or connect OpenAI directly from Chrome. No Node, backend, or build step is needed for either option.
 
-## What it does
+- A readable floating player with play, pause, stop, passage skipping, and a position slider.
+- Drag it anywhere, dock it left or right, or collapse it to a small movable button while listening.
+- Click a word to jump there, follow along with optional auto-scroll, or read selected/pasted text.
+- Local article extraction skips common navigation, ads, controls, and captions. No LLM rewrites the article.
+- OpenAI voices including **Alloy**, **Cedar**, and **Nova**, with delivery and pronunciation guidance for `gpt-4o-mini-tts`.
+- Short initial audio chunks, bounded prefetch, and optional background word alignment. Speed changes apply to buffered audio without regenerating it.
 
-- A compact floating player with play, pause, stop, previous/next passage, and a position slider.
-- **0.75×–4× speed**, adjustable while listening, with pitch-preserving OpenAI playback.
-- Word highlighting, optional automatic scrolling, and click-a-word seeking.
-- Local article extraction that skips common ads, navigation, forms, and captions. No LLM summarizes or rewrites the page.
-- Selected-text reading and a paste-text option for unusual layouts.
-- OpenAI voices through `gpt-4o-mini-tts`, `tts-1`, and `tts-1-hd`, plus a browser voice option.
-- A short first audio chunk, bounded prefetch, and memory caches to reduce waiting and repeated speech requests.
+## Install and listen
 
-**A few honest limits:** OpenAI audio needs an initial buffer, and fast playback can catch up with generation. Its word highlighting and seeking use estimated timestamps, not forced alignment. Browser voices use word events when available. Tempo works on ordinary readable webpages; it cannot run on Chrome internal pages, the Chrome Web Store, or the built-in PDF viewer. It does not bypass paywalls or reveal collapsed content.
+Requires **Chrome 116+**. This is an unpacked extension, not a Chrome Web Store listing.
 
-## Get started
-
-You need Chrome 116 or later. The browser voice works without Node or an API key.
-
-1. Download or clone this repository to a folder you will keep: `git clone https://github.com/YashDagade/browser-reader.git`.
+1. [Download `hermes-extension.zip`](https://github.com/YashDagade/browser-reader/releases/latest/download/hermes-extension.zip) and extract it to a folder you will keep.
 2. Open `chrome://extensions` and enable **Developer mode**.
-3. Choose **Load unpacked**, then select this repository's **`extension`** folder.
-4. Pin **Tempo · Article Reader** from Chrome's extensions menu.
-5. Open an article, click Tempo, and press **Start reading**.
+3. Click **Load unpacked** and select the extracted **`extension`** folder.
+4. Pin **Hermes · Article Reader** from Chrome's extensions menu.
+5. Open an article, click Hermes, then **Start reading**. The default browser voice needs no API key.
 
-To read one passage, select it before opening Tempo. If extraction misses the text you want, open the player's settings and choose **Read your own text**.
+You can also [clone the repository](https://github.com/YashDagade/browser-reader) and load its `extension` folder. Keep the installed folder in place. After updating its files, click **Reload** at `chrome://extensions` and reload the article tab.
 
-### Connect OpenAI voices
+### Connect OpenAI
 
-The optional speech bridge needs **Node.js 22+** and an OpenAI API key with access to a supported speech model. API usage is billed to the key's project.
+1. Right-click Hermes in Chrome's toolbar and open **Options**.
+2. Under **How to connect**, choose **Direct from Chrome · no Node or server**.
+3. Enter your own OpenAI API key, or import a local `.env.local` file containing `OPENAI_API_KEY`. The file is read locally and is not uploaded.
+4. Click **Save connection** and allow the optional permission to access `api.openai.com`.
+5. Choose **OpenAI · expressive** and a voice in the player. Try Alloy, Cedar, or Nova.
 
-1. In the repository root, create a private `.env.local` file and set `OPENAI_API_KEY` to your API key. Keep the actual value out of source files, screenshots, and commits. You can also supply `OPENAI_API_KEY` through your shell environment.
-2. In that folder, run:
+**The direct-mode key is stored unencrypted in local Chrome storage.** Only trusted extension contexts can access it; it is never synced or sent to webpage content scripts. Protect your Chrome profile. **Forget saved key** removes it and the OpenAI permission. The first speech request verifies the key.
 
-   ```sh
-   npm start
-   ```
+For file-based setup, create a file named `.env.local` on your computer with one line: `OPENAI_API_KEY=your_own_key_here` (replace the placeholder locally). If you cloned the repository, copy `.env.example` to `.env.local` first. Import that private file in Options; do not put the key in extension source files.
 
-3. Leave the terminal running. Open Tempo's player settings, choose **OpenAI · expressive**, and try **Coral**, **Marin**, or **Cedar**.
+OpenAI speech is AI generated and billed to your API project. Voice instructions apply only to `gpt-4o-mini-tts`; older models and browser voices do not support them. Hermes asks for verbatim reading and careful pronunciation of jargon. See [OpenAI's speech guide](https://developers.openai.com/api/docs/guides/text-to-speech).
 
-No `npm install` is needed to run the bridge: it uses Node's standard library. The service listens only on `127.0.0.1:43123`. On macOS, `Start Tempo.command` is an alternative launcher. For background startup at login, stop any terminal instance and run `npm run service:install`. After a key change, run `npm run service:restart`; remove background startup with `npm run service:uninstall`.
+### Optional local helper
 
-OpenAI narration is AI generated. The expressive model receives instructions to read the source verbatim and handle scientific terminology carefully; correct pronunciation of every technical term is not guaranteed.
+To keep the key outside Chrome, clone the full repository, install **Node.js 22+**, and set `OPENAI_API_KEY` in a private `.env.local` file at the repository root. Then run:
 
-### Controls
+```sh
+npm start
+```
+
+Choose **Local helper** in Options and save. The helper needs no dependency installation and listens only on `127.0.0.1:43123`; leave it running. On macOS, use `Start Hermes.command` or install startup at login with `npm run service:install` after stopping any terminal instance. `npm run service:restart` reloads a changed key; `npm run service:uninstall` removes background startup.
+
+Install the extension separately in each Chrome profile. Direct keys and preferences stay separate per profile; multiple profiles can share one local helper. Each profile has one active reading session.
+
+## Make it your pace
 
 | Action | Control |
 | --- | --- |
-| Open the reader | Toolbar icon, page context menu, or `Alt+Shift+R` (`Option+Shift+R` on Mac) |
+| Open Hermes | Toolbar icon, page context menu, or `Alt+Shift+R` (`Option+Shift+R` on Mac) |
 | Play / pause | Main button or `Alt+Space` while the page is focused |
 | Pause | `Escape` while the page is focused |
-| Change speed | Speed button → slider or preset |
-| Jump within the article | Click a non-link word or move the position slider |
+| Change speed or voice | Speed button or player settings |
+| Seek | Click a non-link word or use the position slider |
 | Move between passages | Previous / next buttons |
-| Reset or close | Stop button or close button; closing also stops playback |
+| Move / dock / collapse | Drag handle, position settings, or collapse button |
+| Reset or close | Stop or close; closing stops playback |
 
-Chrome may reserve a shortcut or let another extension claim it. Change Tempo's opening shortcut at `chrome://extensions/shortcuts`.
+Select a passage before opening Hermes to read just that selection. **Read your own text** accepts pasted text without page highlighting. Customize the opening shortcut at `chrome://extensions/shortcuts` if another app claims it.
 
-### Multiple Chrome profiles
+**Word timing:** **Improve timing** matches background `whisper-1` transcription timestamps to the source. Playback starts without waiting; estimates remain while alignment is pending or unavailable. This adds API usage and is not perfectly exact. Choose **Lightweight** to disable it. Browser voices use native word events when available. See [OpenAI's transcription guide](https://developers.openai.com/api/docs/guides/speech-to-text).
 
-Load the same `extension` folder once in each profile. All profiles can use the same running local bridge; voice and speed preferences are saved separately in each profile. Each profile has one active Tempo reading session. Starting another article replaces that session.
+**Time remaining** appears as minutes:seconds. Buffered audio uses measured durations; passages not yet generated and browser speech use estimates. Playback speed is reflected in the countdown.
 
-## Privacy and credentials
+## Privacy and limits
 
-Tempo injects its reader into the active tab only after you invoke it. It has no analytics and does not require access to all website content in advance. Article text is held in the reading session; settings are stored locally in Chrome.
+Hermes runs on the active tab only when invoked, with no analytics. OpenAI receives current and prefetched text, plus generated audio for improved timing; page HTML, cookies, and browsing history are not sent. Browser mode requires an installed, non-remote voice.
 
-Browser mode uses Chrome's speech interface and requires an installed, non-remote voice. OpenAI mode sends the current text chunk and a few upcoming chunks through the local bridge to OpenAI. It does not send the page's HTML, cookies, or browsing history. The API key stays in the local bridge process and never goes into the extension or webpage. Audio caches are memory-only and bounded; restarting the bridge clears its cache.
+Audio stays in memory. The extension caps retained audio at **12 MiB**, creates its audio document when needed, and releases it on stop/close or after three idle minutes. It does not poll playback while idle. The helper's **16 MiB** audio cache expires after ten minutes. These are cache limits, not total RAM limits.
 
-`.env.local`, other environment files, and local output are excluded from Git. Ignore rules protect untracked files, not secrets previously committed to history. Never commit a real key. The repository does not require or store GitHub credentials.
+Environment and common credential files are Git-ignored; no key is bundled in the source or extension ZIP. The helper rejects website origins and supports an optional extension-ID allowlist. See [security and data flow](docs/architecture.md#credentials-and-request-boundaries).
 
-The bridge rejects website origins and checks request headers. By default, Chrome extension origins are allowed; to restrict it to your Tempo installations, set `READER_EXTENSION_IDS` to their comma-separated IDs in your private environment file. Find each ID at `chrome://extensions`, then restart the bridge. The bridge is intended for a trusted personal computer, not as a public service.
+OpenAI needs an initial buffer; fast playback and chunk transitions can cause gaps. Unusual layouts may require selecting or pasting text. Chrome internal pages, the Web Store, and the built-in PDF viewer are unsupported. Hermes does not bypass paywalls or reveal collapsed content.
 
-## Troubleshooting
-
-- **OpenAI is unavailable:** start the bridge, confirm that its key is configured, and check the connection from Tempo's extension options. Browser voice remains a separate option.
-- **Wrong passage or missing text:** close Tempo, select the desired passage, and reopen it; or paste the text in settings. Reloading a page or changing its content can invalidate old word positions.
-- **Highlighting drifts:** OpenAI timestamps are approximate. Click near the desired word to reposition, or use browser voice if its word events suit your reading better.
-- **Changes are not visible:** click **Reload** for Tempo at `chrome://extensions`, then reload the article tab.
-- **No browser speech:** check system audio and installed speech voices. Browser voice quality and event support vary by operating system.
+If speech fails, check your connection settings or installed system voices. If extraction misses, close Hermes and reopen it with the desired passage selected.
 
 ## Development
 
@@ -87,20 +86,18 @@ The bridge rejects website origins and checks request headers. By default, Chrom
 npm install
 npm test
 npm run check
+npm run check:secrets
+npm run package
 ```
 
-The extension is plain JavaScript, HTML, and CSS. `jsdom` is a development-only dependency for tests. The test suite covers text extraction, player behavior, audio scheduling, and the local bridge with mocked speech responses; it does not spend API credits.
-
-See [the architecture notes](docs/architecture.md) for the data flow, timing tradeoffs, and security boundaries. Contributions that improve extraction, accessibility, and playback reliability are welcome. Please include a reproducible example without private page content or credentials.
+Plain JavaScript, HTML, and CSS; `jsdom` is development-only. Mocked tests spend no API credits. Packaging writes `output/hermes-extension.zip`. See [the architecture notes](docs/architecture.md). Reproducible contributions are welcome; keep private content and credentials out of issues.
 
 Licensed under [MIT](LICENSE).
 
 ## Demo
 
-[![Tempo walkthrough: a quiet Chrome player with word highlighting and adjustable speed](docs/demo-poster.png)](docs/tempo-demo.mp4)
+[![Hermes: a movable Chrome reader with highlighting, voice controls, and adjustable speed](docs/demo-poster.png)](docs/hermes-demo.mp4)
 
-[Watch the 28-second walkthrough (MP4)](docs/tempo-demo.mp4). This silent, captioned video uses real Chrome captures and original sample text. It shows playback highlighting, the 4× speed setting, and a word selected for seeking; OpenAI word timing and seeking are approximate.
+[Watch the 35-second walkthrough (MP4)](docs/hermes-demo.mp4). This silent, captioned demo uses real Chrome captures and original sample text.
 
-Tempo keeps the article in place and adds a small player. Text extraction runs locally, short audio chunks keep playback responsive, and speed changes happen in the player without generating the audio again. Use OpenAI for natural voices or an installed browser voice for local speech.
-
-To try the same sample article, run `npm run demo`, open the local address printed in the terminal, and start Tempo from the Chrome toolbar.
+Hermes keeps the article in place and adds a player you can move out of the way. Text extraction runs locally, short audio chunks keep playback responsive, and speed changes happen in the player. Use OpenAI for expressive voices or an installed browser voice for local speech. To try the sample article, run `npm run demo` from the full repository and open the local address printed in the terminal.

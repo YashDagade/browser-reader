@@ -1,73 +1,78 @@
-# How Tempo works
+# How Hermes works
 
-Tempo is a Manifest V3 Chrome extension with an optional local Node speech bridge. The webpage remains the reading surface. Extraction and controls use ordinary JavaScript; only speech synthesis uses an AI model.
+Hermes is a Manifest V3 Chrome extension. It extracts article text locally, keeps the webpage as the reading surface, and offers native browser speech or OpenAI narration. OpenAI can be called directly from Chrome or through an optional local Node helper.
 
 ```mermaid
 flowchart LR
-    Page[Article or selected text] --> Extract[Local DOM extraction]
+    Page[Article or selection] --> Extract[Local DOM extraction]
     Extract --> Worker[Extension service worker]
-    Worker --> System[Chrome speech interface]
+    Worker --> Native[Chrome speech interface]
     Worker --> Audio[Offscreen audio document]
-    Audio --> Bridge[Local Node bridge]
-    Bridge --> OpenAI[OpenAI speech API]
-    System --> Highlight[Word highlight and player]
-    Audio --> Highlight
+    Audio --> Client[Speech client]
+    Client -->|Direct mode| API[OpenAI speech and transcription]
+    Client -->|Local mode| Helper[Loopback Node helper]
+    Helper --> API
+    Native --> Player[Player and word highlights]
+    Audio --> Player
 ```
 
 ## Components
 
 | File | Responsibility |
 | --- | --- |
-| `extension/manifest.json` | On-demand tab access, local bridge permission, and extension entrypoints |
-| `extension/extractor.js` | Article scoring, noise filtering, selected text, DOM word ranges, and chunking |
+| `extension/manifest.json` | On-demand tab access, local helper permission, optional OpenAI permission |
+| `extension/extractor.js` | Article scoring, noise filtering, DOM word ranges, and chunking |
 | `extension/content.js` | Page session, keyboard controls, word seeking, and CSS highlights |
-| `extension/ui.js` | Floating player isolated from page styles in a Shadow DOM |
-| `extension/background.js` | Session coordination, settings, Chrome speech, and offscreen document lifecycle |
-| `extension/offscreen.js` | OpenAI audio requests, buffering, playback, cancellation, and estimated timing |
-| `server/server.mjs` | Loopback HTTP service, credential boundary, upstream requests, and audio cache |
+| `extension/ui.js` | Draggable, dockable, collapsible player isolated in a Shadow DOM |
+| `extension/background.js` | Trusted storage access, settings, session coordination, native speech, and audio lifecycle |
+| `extension/speech-client.js` | Direct/helper routing, speech requests, and optional transcription |
+| `extension/offscreen.js` | Audio requests, buffering, playback, cancellation, and timing updates |
+| `extension/timing.js` | WAV inspection, estimated boundaries, and transcript-to-source matching |
+| `extension/options.js` | Connection setup, optional permission request, local key import, and voice defaults |
+| `server/server.mjs` | Optional loopback service, upstream requests, and bounded audio cache |
 
-## Extraction and highlighting
+## Extraction and interaction
 
-Clicking the extension grants `activeTab` access and injects the reader into that page. There is no persistent content script running across every site.
+Invoking Hermes grants `activeTab` access and injects the reader into that page. No persistent content script runs across every site. The extractor visits eligible visible text nodes, filters common interface elements and noise patterns, then scores candidate article containers using text volume, link density, and semantic signals. A selection limits extraction directly.
 
-The extractor visits eligible visible text nodes, excluding common interface elements and noise patterns. It scores candidate article containers by text volume, link density, and semantic signals such as `<article>` and `<main>`. A selection narrows the text directly. The result is a sequence of words with DOM `Range` objects that can span inline elements.
+Words retain DOM `Range` objects that can span inline markup. CSS Custom Highlights mark the current word without replacing or wrapping the article's text nodes. Click-to-seek maps the clicked DOM position back to those ranges; links and interactive controls retain their normal behavior. Pasted text has no page ranges. If a site replaces its content after extraction, reopen Hermes to refresh the map.
 
-CSS Custom Highlights draw the current word without wrapping or replacing the article's text nodes. Click-to-seek maps the clicked DOM position back to the extracted words. Links and interactive controls retain their usual click behavior. Pasted text has no matching page ranges, so it has audio controls but no article-word highlighting.
+This is a heuristic HTML reader. It does not parse PDFs, images, cross-origin frames, or inaccessible shadow content, and it does not reveal hidden or paywalled text.
 
-This is a heuristic extractor. It does not parse PDFs, images, cross-origin frames, or inaccessible shadow content. It does not reveal hidden or paywalled text. If the page replaces its DOM after extraction, reopen the reader to refresh the word map.
+## Speech, timing, and latency
 
-## Speech and latency
+The first chunk targets about 25 words; subsequent chunks target about 85. Sentence and paragraph boundaries guide splitting within word and character limits. No language model summarizes or rewrites the source.
 
-The first chunk targets about 25 words, with subsequent chunks targeting about 85. Sentence and paragraph boundaries guide splitting, subject to word and character limits. Small initial chunks reduce time to first audio; larger later chunks reduce request overhead.
+Browser mode uses `chrome.tts`, requires an installed non-remote voice, and consumes native word events when provided. Changing speed or seeking restarts speech from the current word. Its remaining-time estimate uses word count and the selected rate.
 
-Browser mode routes through `chrome.tts`. It requires an installed non-remote voice and follows available word events. Speed changes or seeking restart speech from the current word.
+OpenAI mode requests complete WAV chunks at native speed through `speech-client.js`. `gpt-4o-mini-tts` receives verbatim-reading instructions plus up to 1,000 characters of user pronunciation/delivery guidance. The legacy `tts-1` and `tts-1-hd` paths omit those instructions. Playback uses `HTMLAudioElement.playbackRate` with pitch preservation, so adjusting speed does not resynthesize buffered audio. This is chunked playback, not token-level audio streaming; generation and chunk transitions can still cause waits. See the [OpenAI speech guide](https://developers.openai.com/api/docs/guides/text-to-speech).
 
-OpenAI mode uses an offscreen document so changing tabs does not destroy the audio player. It requests complete WAV chunks from the local bridge, with at most two extension-side requests running concurrently and three chunks of lookahead. The client keeps a small moving cache around the current passage. Stop and model/voice changes clear this cache and cancel pending requests; seeking reprioritizes the requested chunk. Pause can allow existing bounded prefetch work to finish.
+Estimated word boundaries use WAV duration, detected edge silence, word length, and punctuation. Optional improved timing sends the generated audio to `whisper-1` with `verbose_json` and word timestamps. This work runs separately from speech preparation and never blocks first playback. A deterministic matcher aligns transcript tokens to the original text, allowing split acronyms, merged words, and small transcription differences. Low-coverage or invalid results are rejected; estimates remain available. Alignment adds API usage and improves navigation without guaranteeing exact word boundaries. See the [OpenAI transcription guide](https://developers.openai.com/api/docs/guides/speech-to-text).
 
-The bridge requests speech at native speed. Playback uses `HTMLAudioElement.playbackRate` with pitch preservation, so changing speed does not require resynthesizing buffered audio. Each chunk is a separate audio element; transitions can have gaps, especially when listening faster than speech can be generated. This is chunked playback, not token-by-token audio streaming.
+The audio clock drives highlighting and seeking. The minutes:seconds display combines measured remaining durations for buffered chunks with an estimate for ungenerated words, adjusted for speed. A measured chunk does not make the whole article's remaining time exact.
 
-## Word timing
+## Resource use and lifecycle
 
-OpenAI WAV responses do not provide word boundaries in this implementation. Tempo estimates them by distributing the chunk's measured duration across words, weighting word length and punctuation. The player's audio clock determines the highlighted word, and seeking uses those same estimated offsets.
+The extension allows two speech requests and one alignment request concurrently, with up to three future chunks prepared. It retains a moving cache around the current passage and caps retained audio blobs at **12 MiB**. That cap does not include all browser overhead, transient request buffers, decoded audio, source text, or DOM ranges; it is not a total-RAM guarantee.
 
-This supports fast navigation without a transcription or alignment request, but is not exact synchronization. A click can land slightly before or after the spoken word. The displayed remaining time is also an estimate based on word count and playback speed.
+The offscreen document is created when OpenAI playback needs it. Stop, close, and navigation release it; a three-minute idle alarm also releases it after paused, ended, or error states. Playback resumes by preparing audio again if necessary. The 40 ms word-update timer exists only during playback, so the extension does not poll its audio position while idle. Prefetch work already in flight can finish during a pause.
 
-## State and cancellation
+One reading session is active per Chrome profile. Preferences, layout, and direct-mode connection settings use `chrome.storage.local`; session source text and compact playback state use `chrome.storage.session`. Source text is saved on load rather than rewritten at every word update. Opening another article replaces the session.
 
-The service worker coordinates one active reading session per Chrome profile. Persistent preferences live in `chrome.storage.local`; current session data uses `chrome.storage.session`. Opening another article replaces the active session. Closing or navigating the source tab stops it.
+Generation and operation counters prevent late responses from starting stale playback or undoing a pause. Stop and voice/model/guidance changes cancel pending work and clear relevant client audio. Seeking cancels distant prefetch and prioritizes the target passage. Released cache entries revoke object URLs.
 
-Audio operations carry generation and operation counters so late responses cannot start an obsolete session or undo a pause. Aborted requests release object URLs and stop retaining canceled chunks. A separate server cache retains up to 32 MiB of completed audio in memory, keyed by model, voice, and text, so repeating an available chunk can avoid an upstream request.
+The optional helper caches up to **16 MiB** of audio, keyed by model, voice, text, and guidance, with a ten-minute expiry checked on requests and by a lightweight periodic sweep. Cached word timestamps can be reused alongside audio. The cache is memory-only and clears when the process exits.
 
-## Security and data flow
+## Credentials and request boundaries
 
-The API key is read only by the local Node process, from `OPENAI_API_KEY` or a private environment file. It is never returned by the health endpoint or passed to Chrome. The service binds to `127.0.0.1:43123`, validates the Host header, rejects non-extension browser origins, and requires a custom client header. `READER_EXTENSION_IDS` optionally restricts access to a comma-separated list of specific extensions. Without that setting, other Chrome extension origins are permitted. Local programs are part of the trusted-machine boundary.
+**Direct mode:** a deliberate Save connection action requests optional access to `https://api.openai.com/*`. The key is stored unencrypted in `chrome.storage.local`, never Chrome Sync. Storage access is restricted to `TRUSTED_CONTEXTS`; content scripts receive sanitized settings and status rather than credentials. The offscreen document obtains connection details through a sender-checked internal message. Importing an environment file reads it locally without uploading the file. Forgetting the key also removes the optional permission. A ready configuration is not proof of a valid key; OpenAI validates it on a real request.
 
-Requests validate model/voice combinations and text size. The bridge has concurrency, character-rate, and upstream timeout limits. These reduce accidental overload; they are not a billing cap. Requests already processed upstream may incur charges even if canceled locally.
+**Local helper:** Node reads `OPENAI_API_KEY` from the environment or a private environment file. The key stays outside Chrome. The service binds to `127.0.0.1:43123`, validates Host and the custom client header, and rejects non-extension browser origins. `READER_EXTENSION_IDS` optionally limits allowed extension IDs; otherwise Chrome extension origins are permitted. Local programs remain within the trusted-machine boundary. Node 22+ is needed only for this optional helper and repository development.
 
-OpenAI receives spoken text and a small amount of prefetched text, the selected model/voice, and narration instructions where supported. No page HTML, cookies, or API key is exposed to the article page. The bridge stores audio only in memory and avoids returning raw upstream error bodies. Its cache clears on process exit.
+OpenAI receives narration text and limited prefetched text; improved timing additionally sends generated audio. Hermes does not send page HTML, cookies, or browsing history. The expressive model is instructed to treat page text as content to read, not commands. No reasoning model processes the article first.
 
-The expressive model is instructed to read supplied text verbatim, pronounce technical language carefully, and treat article text as content rather than instructions. No reasoning model processes or summarizes the article before narration.
+Both paths bound response sizes and sanitize upstream errors. The helper additionally validates input and applies concurrency, character-rate, and timeout limits. These controls are not a billing cap, and canceled requests may already have incurred usage. Environment and common credential files are excluded from Git; no API key is bundled in the extension package.
 
 ## Validation
 
-`npm test` runs Node tests with DOM and audio mocks. Tests exercise extraction, controls, audio lifecycle behavior, and bridge validation without making paid requests. `npm run check` validates JavaScript syntax and the extension manifest. Real Chrome testing is still needed for browser permissions, installed voice behavior, audio output, and site-specific layouts.
+`npm test` exercises extraction, controls, settings, timing, audio lifecycle, and helper behavior with mocked speech responses. `npm run check` checks JavaScript syntax and extension assets; `npm run check:secrets` scans tracked files for common credential patterns without printing secret values. `npm run package` produces the installable extension ZIP. Real Chrome checks remain necessary for permissions, installed voices, audio output, and website layouts.

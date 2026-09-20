@@ -1,16 +1,43 @@
 {
   "manifest_version": 3,
-  "name": "Tempo · Article Reader",
+  "name": "Hermes \u00b7 Article Reader",
   "description": "Your articles, at your pace. Fast speech, word highlighting, and a quiet floating player.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "minimum_chrome_version": "116",
-  "permissions": ["activeTab", "scripting", "storage", "offscreen", "contextMenus", "tts"],
-  "host_permissions": ["http://127.0.0.1:43123/*"],
-  "background": {"service_worker": "background.js"},
-  "action": {"default_title": "Start reading with Tempo"},
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "offscreen",
+    "contextMenus",
+    "tts",
+    "alarms"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:43123/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Start reading with Hermes"
+  },
   "options_page": "options.html",
   "commands": {
-    "_execute_action": {"suggested_key": {"default": "Alt+Shift+R", "mac": "Alt+Shift+R"}, "description": "Open Tempo on this page"}
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+R",
+        "mac": "Alt+Shift+R"
+      },
+      "description": "Open Hermes on this page"
+    }
   },
-  "icons": {"16": "icons/16.png", "48": "icons/48.png", "128": "icons/128.png"}
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "optional_host_permissions": [
+    "https://api.openai.com/*"
+  ]
 }

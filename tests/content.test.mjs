@@ -8,7 +8,7 @@ const extractor = await readFile(new URL('../extension/extractor.js', import.met
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
 async function harness(t) {
-  const dom = new JSDOM('<!doctype html><html><body><article><p>These are <em>neuro</em>science words for reading.</p></article></body></html>', { runScripts: 'outside-only', url: 'https://article.example/' });
+  const dom = new JSDOM('<!doctype html><html><body><article><p>These are <em>neuro</em>science words for reading.</p></article></body></html>', {pretendToBeVisual:true, runScripts: 'outside-only', url: 'https://article.example/' });
   t.after(() => dom.window.close());
   const window = dom.window, commands = [], highlights = new Map(), views = [];
   let listener;
@@ -34,7 +34,7 @@ async function harness(t) {
   window.eval(extractor);
   window.eval(source);
   await flush();
-  const state = value => listener({ type: 'tempo-state', sessionId: commands.findLast(command => command.action === 'load').sessionId, state: value }, {}, () => {});
+  const state = value => listener({ type: 'hermes-state', sessionId: commands.findLast(command => command.action === 'load').sessionId, state: value }, {}, () => {});
   return { window, commands, highlights, views, state };
 }
 
@@ -54,7 +54,7 @@ test('clicking either inline fragment of a word seeks to that complete word', as
 test('cloud Stop clears its old word highlight and preserves the player', async t => {
   const app = await harness(t);
   app.state({ status: 'playing', wordIndex: 2 });
-  assert.equal(app.highlights.get('tempo-word').range.toString(), 'neuroscience');
+  assert.equal(app.highlights.get('hermes-word').range.toString(), 'neuroscience');
   app.state({ status: 'idle', wordIndex: 0 });
   assert.equal(app.highlights.size, 0);
   assert.equal(app.views[0].host.isConnected, true);
@@ -71,4 +71,40 @@ test('pasting a new article releases old page highlights, and close removes play
   assert.equal(app.views.at(-1).host.isConnected, false);
   assert.equal(app.highlights.size, 0);
   assert.equal(app.window.document.querySelector('style'), null);
+});
+
+
+test('close releases source ranges and layout persists without an audio command',async t=>{
+  const app=await harness(t);const before=app.commands.length;
+  await app.views[0].onAction('layout',{x:50,y:80,dock:'right',collapsed:true});
+  assert.equal(app.commands.length,before+1);assert.equal(app.commands.at(-1).type,'layout');
+  await app.views[0].onAction('close');assert.equal(app.commands.at(-1).action,'close');
+});
+
+test('follow scrolls the current word in a tall paragraph and yields to manual scrolling',async t=>{
+  const app=await harness(t);const scrolls=[];
+  app.window.scrollBy=options=>scrolls.push(options);
+  app.window.Range.prototype.getBoundingClientRect=()=>({top:900,bottom:925,left:100,right:150});
+  app.state({status:'playing',wordIndex:2});
+  assert.equal(scrolls.length,1);assert.ok(scrolls[0].top>0);
+  app.window.document.dispatchEvent(new app.window.WheelEvent('wheel'));
+  app.state({status:'playing',wordIndex:3});assert.equal(scrolls.length,1);
+});
+
+test('follow scrolls a nested article pane when the word is clipped inside it',async t=>{
+  const app=await harness(t);const pane=app.window.document.querySelector('article');const scrolls=[];
+  pane.style.overflowY='auto';Object.defineProperties(pane,{scrollHeight:{value:1800},clientHeight:{value:300}});
+  pane.getBoundingClientRect=()=>({top:100,bottom:400});pane.scrollBy=options=>scrolls.push(options);
+  app.window.Range.prototype.getBoundingClientRect=()=>({top:450,bottom:475,left:100,right:150});
+  app.state({status:'playing',wordIndex:2});assert.equal(scrolls.length,1);assert.equal(scrolls[0].top,230);
+});
+
+test('pagehide clears the player and a restored page can reopen with a fresh article',async t=>{
+  const app=await harness(t);
+  app.window.dispatchEvent(new app.window.PageTransitionEvent('pagehide',{persisted:true}));
+  assert.equal(app.views[0].host.isConnected,false);
+  assert.equal(app.commands.at(-1).action,'close');
+  app.window.eval(source);await flush();
+  assert.equal(app.views.length,2);
+  assert.equal(app.commands.filter(message=>message.action==='load').length,2);
 });

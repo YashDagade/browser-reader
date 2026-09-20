@@ -1,8 +1,8 @@
 (() => {
   'use strict';
 
-  const ALL_VOICES = ['coral', 'marin', 'cedar', 'ash', 'sage', 'alloy', 'nova'];
-  const LEGACY_VOICES = ['coral', 'ash', 'sage', 'alloy', 'nova'];
+  const ALL_VOICES = ['alloy', 'cedar', 'nova', 'coral', 'marin', 'ash', 'ballad', 'echo', 'fable', 'onyx', 'sage', 'shimmer', 'verse'];
+  const LEGACY_VOICES = ['alloy', 'nova', 'coral', 'ash', 'echo', 'fable', 'onyx', 'sage', 'shimmer'];
   const icons = {
     play: '<path d="m9 5 10 7-10 7Z" fill="currentColor" stroke="none"/>',
     pause: '<path d="M8 5v14M16 5v14" stroke-width="4"/>',
@@ -11,105 +11,123 @@
     stop: '<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/>',
     settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="currentColor" stroke="none"/><circle cx="15" cy="17" r="3" fill="currentColor" stroke="none"/>',
     close: '<path d="m6 6 12 12M6 18 18 6"/>',
-    check: '<path d="m5 12 4 4L19 6"/>',
+    collapse: '<path d="m5 9 7 7 7-7"/>',
+    drag: '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" stroke-width="3"/>',
+    hermes: '<path d="M4 12h3l3-6 4 12 3-6h3" stroke-width="2"/>',
   };
   const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || icons.play}</svg>`;
-  const number = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
-  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const number = (value, fallback) => value !== null && value !== '' && Number.isFinite(Number(value)) ? Number(value) : fallback;
+  const clamp = (value, min, max) => Math.min(Math.max(min, max), Math.max(min, value));
   const speedLabel = value => `${Number(value.toFixed(2))}×`;
   const capitalize = value => value.charAt(0).toUpperCase() + value.slice(1);
 
   function create({ title = 'Your article', totalWords = 0, settings = {}, onAction = () => {} } = {}) {
-    document.getElementById('browser-reader-root')?.remove();
+    const previous = document.getElementById('browser-reader-root');
+    if (previous?._readerDestroy) previous._readerDestroy();
+    else previous?.remove();
     const host = document.createElement('div');
     host.id = 'browser-reader-root';
-    // Keep page styles out, including aggressive site-wide resets and transforms.
-    host.style.cssText = 'all:initial;position:fixed;inset:auto 12px max(20px, env(safe-area-inset-bottom));z-index:2147483647;display:block;pointer-events:none;color-scheme:dark;';
+    host.style.cssText = 'all:initial;position:fixed;z-index:2147483647;display:block;pointer-events:none;color-scheme:dark;';
     const root = host.attachShadow({ mode: 'open' });
     root.innerHTML = `
       <style>
-        :host { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #f4f4f4; font-size: 13px; line-height: 1.4; text-align: left; }
         *, *::before, *::after { box-sizing: border-box; }
         [hidden] { display: none !important; }
         button, select, input, textarea { font: inherit; }
         button, select { -webkit-tap-highlight-color: transparent; }
         button { color: inherit; border: 0; cursor: pointer; }
-        button:disabled { cursor: default; opacity: .35; }
-        button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid #b9c9ff; outline-offset: 4px; }
-        button svg { width: 19px; height: 19px; display: block; flex-shrink: 0; }
-        .reader { width: min(680px, 100%); margin: 0 auto; pointer-events: auto; color: #f4f4f4; font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-align: left; letter-spacing: 0; }
-        .bar { display: flex; align-items: center; gap: 9px; min-height: 76px; padding: 13px 14px; background: #171819; border: 1px solid #3a3b3c; border-radius: 25px; box-shadow: 0 12px 50px #0003, 0 2px 10px #0002; }
-        .icon-button { display: flex; justify-content: center; align-items: center; width: 33px; height: 34px; padding: 7px; background: transparent; border-radius: 10px; flex-shrink: 0; color: #a6a7aa; transition: background 120ms, color 120ms; }
-        .icon-button:hover { background: #ffffff0d; color: #fff; }
-        .primary { min-width: 40px; height: 40px; padding: 0 11px; display: inline-flex; gap: 7px; align-items: center; justify-content: center; background: #f2f2f0; color: #191a1b; border-radius: 50px; flex-shrink: 0; font-size: 12px; font-weight: 600; white-space: nowrap; }
-        .primary:hover { background: #fff; }
-        .primary svg { width: 18px; height: 18px; }
+        button:disabled { cursor: default; opacity: .4; }
+        button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 2px solid #d9c69a; outline-offset: 3px; }
+        button svg { width: 21px; height: 21px; display: block; flex-shrink: 0; }
+        .reader { width: 100%; position: relative; pointer-events: auto; color: #f5f4f0; font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-align: left; letter-spacing: 0; }
+        .bar { display: flex; align-items: center; gap: 5px; min-height: 76px; padding: 12px; background: #1b1c1e; border: 1px solid #414142; border-radius: 24px; box-shadow: 0 8px 32px #0003; }
+        .icon-button { display: flex; justify-content: center; align-items: center; width: 44px; height: 44px; padding: 10px; background: transparent; border-radius: 12px; flex-shrink: 0; color: #c5c5c8; }
+        .icon-button:hover { background: #ffffff10; color: #fff; }
+        .drag { width: 40px; padding: 8px; cursor: grab; touch-action: none; color: #909094; }
+        .drag:active, .reader.dragging .orb { cursor: grabbing; }
+        .reader.dragging { user-select: none; }
+        .primary { min-width: 46px; min-height: 46px; padding: 0 15px; display: inline-flex; gap: 9px; align-items: center; justify-content: center; background: #ebe4d4; color: #23221f; border-radius: 50px; flex-shrink: 0; font-size: 15px; font-weight: 600; white-space: nowrap; }
+        .primary:hover { background: #fff5df; }
         .primary.loading svg { animation: breathe 1s ease-in-out infinite alternate; }
         @keyframes breathe { from { opacity: .35; } to { opacity: 1; } }
-        .track { min-width: 80px; flex: 1; margin: 0 2px 0 1px; }
-        .track-heading { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
-        .title { display: block; flex: 1; min-width: 0; color: #e9e9e9; font-weight: 500; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .time { flex-shrink: 0; color: #8e9196; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-        .progress-wrap { height: 19px; display: flex; align-items: center; }
-        input[type=range] { --fill: 0%; appearance: none; -webkit-appearance: none; display: block; width: 100%; height: 3px; margin: 0; border: 0; border-radius: 4px; cursor: pointer; background: linear-gradient(to right, #e7e8e8 0%, #e7e8e8 var(--fill), #4b4d51 var(--fill), #4b4d51 100%); }
-        input[type=range]::-webkit-slider-thumb { appearance: none; width: 9px; height: 9px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 5px transparent; }
-        input[type=range]::-moz-range-thumb { width: 9px; height: 9px; border: 0; border-radius: 50%; background: #fff; }
-        input[type=range]:hover::-webkit-slider-thumb { box-shadow: 0 0 0 5px #ffffff15; }
+        .track { min-width: 65px; flex: 1; margin: 0 7px; }
+        .track-heading { display: flex; gap: 10px; align-items: baseline; min-width: 0; }
+        .title { display: block; flex: 1; min-width: 0; color: #f3f1ea; font-weight: 500; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .time { flex-shrink: 0; color: #b9b9bb; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .progress-wrap { height: 24px; display: flex; align-items: center; }
+        input[type=range] { --fill: 0%; appearance: none; -webkit-appearance: none; display: block; width: 100%; height: 5px; margin: 0; border: 0; border-radius: 5px; cursor: pointer; background: linear-gradient(to right, #e6d7b7 0%, #e6d7b7 var(--fill), #555559 var(--fill), #555559 100%); }
+        input[type=range]::-webkit-slider-thumb { appearance: none; width: 13px; height: 13px; border-radius: 50%; background: #f6efe0; }
+        input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border: 0; border-radius: 50%; background: #f6efe0; }
         input[type=range]:disabled { cursor: default; opacity: .4; }
-        .speed-toggle { width: auto; min-width: 43px; font-size: 12px; font-variant-numeric: tabular-nums; color: #d5d6d7; }
+        .speed-toggle { width: 56px; font-size: 16px; font-variant-numeric: tabular-nums; color: #f0ece3; }
         .icon-button[aria-expanded=true] { color: #fff; background: #ffffff10; }
-        .drawer { padding: 19px 21px 17px; margin: 0 0 9px; background: #1d1e20; border: 1px solid #3a3b3c; border-radius: 21px; box-shadow: 0 12px 50px #0003; max-height: min(70vh, 540px); overflow-y: auto; scrollbar-width: thin; }
-        .drawer-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 17px; }
-        .drawer-title { font-size: 13px; font-weight: 600; color: #eee; margin: 0; }
-        .eyebrow { font-size: 10px; color: #8c8f94; letter-spacing: .03em; }
-        .speed-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 0 15px; }
-        .field-label { color: #b7b9bd; font-size: 12px; display: block; }
-        .speed-output { font-size: 15px; color: #f3f3f3; font-weight: 500; font-variant-numeric: tabular-nums; }
-        .speed-slider { margin-bottom: 16px !important; height: 4px !important; }
-        .speed-slider::-webkit-slider-thumb { width: 13px !important; height: 13px !important; }
-        .presets { display: flex; gap: 6px; margin-bottom: 19px; }
-        .preset { padding: 5px 0; border-radius: 7px; background: #ffffff06; border: 1px solid #ffffff0b; color: #a6a9ae; font-size: 11px; flex: 1; }
-        .preset:hover, .preset[aria-pressed=true] { color: #f5f5f5; background: #ffffff14; border-color: #ffffff1c; }
-        .fields { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; padding-top: 17px; border-top: 1px solid #ffffff10; }
-        .fields label { min-width: 0; }
-        select { width: 100%; display: block; margin-top: 7px; padding: 8px 9px; border: 1px solid #414347; border-radius: 8px; color: #e5e6e7; background: #252629; font-size: 12px; }
-        .follow { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 17px; cursor: pointer; }
-        .follow input { accent-color: #dedede; width: 15px; height: 15px; margin: 0; }
-        .hint { color: #8b8e94; font-size: 11px; line-height: 1.5; margin: 12px 0 0; }
-        .paste-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: 17px; padding: 14px 0 0; background: transparent; border-top: 1px solid #ffffff10; font-size: 12px; color: #c5c7cb; text-align: left; }
-        .paste-toggle span:last-child { color: #7e8186; font-size: 17px; }
-        textarea { resize: vertical; display: block; width: 100%; min-height: 95px; max-height: 240px; color: #eee; background: #161719; padding: 10px; border: 1px solid #414347; border-radius: 8px; margin: 11px 0 9px; line-height: 1.55; font-size: 12px; }
-        textarea::placeholder { color: #70747b; }
-        .paste-action { background: #e7e7e5; color: #202123; border-radius: 7px; padding: 8px 12px; font-size: 11px; font-weight: 600; }
-        .notice { background: #292725; border: 1px solid #514b42; border-radius: 14px; margin: 0 0 9px; padding: 11px 14px; color: #e2d7c6; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+        .orb { width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; background: #1b1c1e; color: #eddfbd; border: 1px solid #55504a; border-radius: 50%; box-shadow: 0 6px 22px #0003; touch-action: none; cursor: grab; }
+        .orb svg { width: 31px; height: 31px; }
+        .orb[data-playing=true] { border: 2px solid #d0b87e; }
+        .reader[data-dock=left] .bar, .reader[data-dock=right] .bar { flex-direction: column; gap: 5px; padding: 10px 8px; border-radius: 25px; max-height: calc(100vh - 24px); overflow-y: auto; scrollbar-width: none; }
+        .reader[data-dock=left] .drag, .reader[data-dock=right] .drag { width: 44px; height: 40px; transform: rotate(90deg); }
+        .reader[data-dock=left] .primary, .reader[data-dock=right] .primary { width: 46px; padding: 0; }
+        .reader[data-dock=left] .primary-label, .reader[data-dock=right] .primary-label,
+        .reader[data-dock=left] .title, .reader[data-dock=right] .title { display: none; }
+        .reader[data-dock=left] .track, .reader[data-dock=right] .track { flex: none; width: 52px; min-width: 0; margin: 3px 0; }
+        .reader[data-dock=left] .track-heading, .reader[data-dock=right] .track-heading { justify-content: center; }
+        .reader[data-dock=left] .progress-wrap, .reader[data-dock=right] .progress-wrap { justify-content: center; height: 104px; padding: 12px 0; }
+        .reader[data-dock=left] .progress, .reader[data-dock=right] .progress { writing-mode: vertical-lr; direction: rtl; width: 5px; height: 80px; background: linear-gradient(to top, #e6d7b7 0%, #e6d7b7 var(--fill), #555559 var(--fill), #555559 100%); }
+        .drawer { position: fixed; width: min(420px, calc(100vw - 24px)); padding: 20px; background: #202123; border: 1px solid #434345; border-radius: 22px; box-shadow: 0 8px 32px #0003; max-height: min(75vh, 690px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+        .drawer-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+        .drawer-title { font-size: 19px; font-weight: 600; color: #f0e7d5; margin: 0; }
+        .bar > * { flex-shrink: 0; }
+        .bar > .track { flex-shrink: 1; }
+        .drawer-dismiss { margin: -8px -8px -8px 0; }
+        .speed-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 0 16px; }
+        .field-label { color: #d1d1d3; font-size: 15px; display: block; }
+        .speed-output { font-size: 18px; color: #f4eee0; font-weight: 500; font-variant-numeric: tabular-nums; }
+        .speed-slider { margin-bottom: 18px !important; }
+        .presets { display: flex; gap: 6px; margin-bottom: 18px; }
+        .preset { min-height: 40px; padding: 5px 0; border-radius: 10px; background: #ffffff06; border: 1px solid #ffffff12; color: #c0c0c3; font-size: 15px; flex: 1; }
+        .preset:hover, .preset[aria-pressed=true] { color: #f5eddf; background: #ddc79418; border-color: #ddc79466; }
+        select { width: 100%; display: block; margin-top: 7px; min-height: 44px; padding: 9px 11px; border: 1px solid #4b4c50; border-radius: 11px; color: #efeff0; background: #292a2d; font-size: 16px; }
+        .follow { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; margin-top: 8px; cursor: pointer; }
+        .follow input { accent-color: #ded1b3; width: 19px; height: 19px; margin: 0; }
+        .hint { color: #aaabae; font-size: 14px; line-height: 1.5; margin: 8px 0 0; }
+        .timing-hint { margin-top: 4px; }
+        details { border-top: 1px solid #ffffff15; margin-top: 15px; padding-top: 5px; }
+        summary { min-height: 44px; padding: 11px 0; color: #dededc; cursor: pointer; font-size: 15px; }
+        .advanced .field-label + .field-label { margin-top: 14px; }
+        .prompt-label { margin-top: 16px; }
+        textarea { resize: vertical; display: block; width: 100%; min-height: 100px; max-height: 220px; color: #eee; background: #18191b; padding: 12px; border: 1px solid #4b4c50; border-radius: 11px; margin: 8px 0; line-height: 1.5; font-size: 16px; }
+        textarea:disabled { opacity: .5; }
+        textarea::placeholder { color: #95969b; }
+        .prompt-count { text-align: right; color: #a9aaae; font-size: 13px; margin: 4px 0 0; }
+        .paste-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 48px; margin-top: 12px; padding: 10px 0 0; background: transparent; border-top: 1px solid #ffffff15; font-size: 15px; color: #dededc; text-align: left; }
+        .paste-toggle span:last-child { color: #b1b2b7; font-size: 22px; }
+        .paste-action { background: #ebe4d4; color: #23221f; border-radius: 10px; padding: 10px 15px; min-height: 44px; font-size: 15px; font-weight: 600; }
+        .dock-controls { display: flex; gap: 6px; margin-top: 8px; }
+        .dock-button { border: 1px solid #4b4c50; background: transparent; min-height: 42px; flex: 1; border-radius: 10px; font-size: 14px; }
+        .dock-button[aria-pressed=true] { background: #ddc79418; border-color: #ddc79466; }
+        .utility { display: flex; gap: 12px; justify-content: space-between; margin-top: 12px; padding-top: 8px; border-top: 1px solid #ffffff15; }
+        .utility button { background: transparent; display: flex; gap: 8px; align-items: center; padding: 8px 0; min-height: 44px; color: #c2c2c5; font-size: 14px; }
+        .utility button svg { width: 17px; height: 17px; }
+        .notice { position: fixed; width: min(400px, calc(100vw - 24px)); background: #302b24; border: 1px solid #62523b; border-radius: 14px; padding: 12px 15px; color: #f0e0c4; font-size: 15px; overflow-wrap: anywhere; }
         .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
-        @media (max-width: 560px) {
-          .bar { gap: 4px; padding: 10px; min-height: 66px; border-radius: 22px; }
-          .icon-button { width: 29px; padding: 6px; }
-          .speed-toggle { min-width: 39px; }
-          .primary-label { display: none; }
-          .primary { width: 37px; min-width: 37px; height: 37px; padding: 0; }
-          .track { margin-left: 5px; }
-          .time { font-size: 10px; }
-          .drawer { padding: 17px; }
-        }
-        @media (max-width: 390px) { .skip-button { display: none; } .fields { grid-template-columns: 1fr; } }
-        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+        @media (max-width: 660px) { .primary-label { display: none; } .primary { width: 46px; padding: 0; } .bar { gap: 2px; padding: 9px; } .track-heading { flex-direction: column; gap: 0; } .title { max-width: 100%; width: 100%; } .progress-wrap { height: 18px; } }
+        @media (max-width: 440px) { .skip-button { display: none; } .bar { gap: 0; } .track { margin: 0 3px; min-width: 40px; } .speed-toggle { width: 47px; font-size: 15px; } .drawer { padding: 17px; } .reader[data-dock=left] .skip-button, .reader[data-dock=right] .skip-button { display: flex; } }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; } }
       </style>
-      <section class="reader" aria-label="Article reader">
+      <section class="reader" aria-label="Hermes article reader">
         <div class="notice" role="alert" hidden></div>
         <div class="drawer" id="reader-settings" hidden>
-          <div class="drawer-top"><h2 class="drawer-title">Make it your pace</h2><span class="eyebrow">READER</span></div>
+          <div class="drawer-top"><h2 class="drawer-title">Hermes</h2><button type="button" class="icon-button drawer-dismiss" aria-label="Close settings">${icon('close')}</button></div>
           <div class="speed-heading"><label class="field-label" for="reader-speed">Reading speed</label><output class="speed-output" for="reader-speed">1×</output></div>
           <input class="speed-slider" id="reader-speed" type="range" min="0.75" max="4" step="0.05" aria-label="Reading speed">
           <div class="presets" aria-label="Speed presets">
-            <button type="button" class="preset" data-speed="1" aria-pressed="false">1×</button>
-            <button type="button" class="preset" data-speed="1.5" aria-pressed="false">1.5×</button>
-            <button type="button" class="preset" data-speed="2" aria-pressed="false">2×</button>
-            <button type="button" class="preset" data-speed="3" aria-pressed="false">3×</button>
-            <button type="button" class="preset" data-speed="4" aria-pressed="false">4×</button>
+            ${[1, 1.5, 2, 3, 4].map(speed => `<button type="button" class="preset" data-speed="${speed}" aria-pressed="false">${speed}×</button>`).join('')}
           </div>
-          <div class="fields">
+          <label class="field-label voice-field" for="reader-voice">Voice<select id="reader-voice"></select></label>
+          <label class="follow field-label" for="reader-follow"><span>Auto-scroll with the voice</span><input id="reader-follow" type="checkbox"></label>
+          <p class="hint timing-hint"></p>
+          <details class="advanced">
+            <summary>Voice &amp; reading preferences</summary>
             <label class="field-label" for="reader-model">Voice engine
               <select id="reader-model">
                 <option value="gpt-4o-mini-tts">OpenAI · expressive</option>
@@ -118,66 +136,113 @@
                 <option value="local">Browser voice · instant</option>
               </select>
             </label>
-            <label class="field-label voice-field" for="reader-voice">Voice<select id="reader-voice"></select></label>
-          </div>
-          <label class="follow field-label" for="reader-follow"><span>Follow words as they’re read</span><input id="reader-follow" type="checkbox"></label>
-          <p class="hint timing-hint">AI voice · Word timing is estimated. Click a word in the article to jump there.</p>
+            <label class="follow field-label" for="reader-sync"><span>Tighter word sync</span><input id="reader-sync" type="checkbox" aria-describedby="reader-sync-help"></label>
+            <p class="hint" id="reader-sync-help">Adds a small transcription request to match words to the audio.</p>
+            <label class="field-label prompt-label" for="reader-instructions">Voice instructions</label>
+            <textarea id="reader-instructions" maxlength="1000" placeholder="This is a physics article. Pronounce technical terms carefully; keep a clear, natural pace." aria-describedby="reader-instructions-help" spellcheck="false"></textarea>
+            <p class="hint" id="reader-instructions-help"></p>
+            <p class="prompt-count" aria-live="off">0 / 1000</p>
+            <p class="field-label">Toolbar position</p>
+            <div class="dock-controls" role="group" aria-label="Toolbar position">
+              <button class="dock-button" type="button" data-dock="left" aria-pressed="false">Left</button>
+              <button class="dock-button" type="button" data-dock="free" aria-pressed="true">Floating</button>
+              <button class="dock-button" type="button" data-dock="right" aria-pressed="false">Right</button>
+            </div>
+          </details>
           <button type="button" class="paste-toggle" aria-expanded="false" aria-controls="reader-paste"><span>Read your own text</span><span aria-hidden="true">+</span></button>
           <div id="reader-paste" hidden>
             <label class="sr-only" for="reader-text">Text to read</label>
             <textarea id="reader-text" placeholder="Paste an essay, a note, or anything you want to hear…" spellcheck="false"></textarea>
             <button type="button" class="paste-action" disabled>Start reading this text</button>
           </div>
+          <div class="utility"><button type="button" class="stop" aria-label="Stop reading">${icon('stop')}Stop reading</button><button type="button" class="close" aria-label="Close reader">${icon('close')}Close Hermes</button></div>
         </div>
         <div class="bar" role="group" aria-label="Reading controls">
+          <button type="button" class="icon-button drag" aria-label="Move Hermes" title="Drag to move; arrow keys also move the toolbar">${icon('drag')}</button>
           <button type="button" class="primary" aria-label="Start reading">${icon('play')}<span class="primary-label">Start reading</span></button>
           <button type="button" class="icon-button skip-button previous" aria-label="Previous passage" title="Previous passage">${icon('previous')}</button>
           <button type="button" class="icon-button skip-button next" aria-label="Next passage" title="Next passage">${icon('next')}</button>
-          <div class="track">
-            <div class="track-heading"><span class="title"></span><span class="time"></span></div>
-            <div class="progress-wrap"><input class="progress" type="range" min="0" max="1" step="1" value="0" aria-label="Reading position"></div>
-          </div>
+          <div class="track"><div class="track-heading"><span class="title"></span><span class="time"></span></div><div class="progress-wrap"><input class="progress" type="range" min="0" max="1" step="1" value="0" aria-label="Reading position"></div></div>
           <button type="button" class="icon-button speed-toggle" aria-label="Adjust reading speed" aria-expanded="false" aria-controls="reader-settings" title="Adjust reading speed">1×</button>
-          <button type="button" class="icon-button stop" aria-label="Stop reading" title="Stop reading">${icon('stop')}</button>
           <button type="button" class="icon-button settings-toggle" aria-label="Reader settings" aria-expanded="false" aria-controls="reader-settings" title="Reader settings">${icon('settings')}</button>
-          <button type="button" class="icon-button close" aria-label="Close reader" title="Close reader">${icon('close')}</button>
+          <button type="button" class="icon-button collapse" aria-label="Collapse Hermes" title="Collapse Hermes">${icon('collapse')}</button>
         </div>
+        <button type="button" class="orb" aria-label="Expand Hermes" title="Expand Hermes · drag to move" hidden>${icon('hermes')}</button>
         <div class="sr-only live-status" role="status" aria-live="polite" aria-atomic="true"></div>
       </section>`;
 
     const get = selector => root.querySelector(selector);
     const elements = {
-      title: get('.title'), time: get('.time'), progress: get('.progress'), primary: get('.primary'),
+      reader: get('.reader'), bar: get('.bar'), orb: get('.orb'), title: get('.title'), time: get('.time'), progress: get('.progress'), primary: get('.primary'),
       drawer: get('.drawer'), speed: get('#reader-speed'), speedOutput: get('.speed-output'),
       speedToggle: get('.speed-toggle'), settingsToggle: get('.settings-toggle'),
       voice: get('#reader-voice'), voiceField: get('.voice-field'), model: get('#reader-model'),
-      follow: get('#reader-follow'), notice: get('.notice'), live: get('.live-status'),
-      previous: get('.previous'), next: get('.next'), stop: get('.stop'), hint: get('.timing-hint'),
+      follow: get('#reader-follow'), sync: get('#reader-sync'), syncHelp: get('#reader-sync-help'), instructions: get('#reader-instructions'), instructionsHelp: get('#reader-instructions-help'), promptCount: get('.prompt-count'),
+      notice: get('.notice'), live: get('.live-status'), previous: get('.previous'), next: get('.next'), stop: get('.stop'), hint: get('.timing-hint'),
       pasteToggle: get('.paste-toggle'), paste: get('#reader-paste'), text: get('#reader-text'), pasteAction: get('.paste-action'),
     };
     let state = {
-      title, totalWords, wordIndex: 0, status: 'ready', speed: 1, voice: 'coral',
+      title, totalWords, wordIndex: 0, status: 'ready', speed: 1, voice: 'alloy', instructions: '', syncMode: 'precise',
       model: 'gpt-4o-mini-tts', follow: true, connected: undefined, error: '', ...settings,
     };
-    let destroyed = false;
-    let seeking = false;
-    let drawerOpen = false;
-    let lastAnnouncement = '';
-    let lastVoiceModel = '';
-    const emit = (action, payload) => {
-      if (!destroyed) onAction(action, payload);
-    };
+    let layout = { dock: 'free', collapsed: false, ...settings.layout };
+    let destroyed = false, seeking = false, drawerOpen = false, drag = null, suppressOrbClick = false;
+    let lastAnnouncement = '', lastVoiceModel = '';
+    const emit = (action, payload) => { if (!destroyed) onAction(action, payload); };
+
+    function panelPosition() {
+      const viewportWidth = window.innerWidth, viewportHeight = window.innerHeight;
+      const width = Math.min(420, Math.max(0, viewportWidth - 24));
+      const barHeight = (layout.collapsed ? 60 : elements.bar.getBoundingClientRect().height) || (layout.dock === 'free' ? 76 : 430);
+      const anchorX = number(layout.x, 12), anchorY = number(layout.y, 12);
+      const panelHeight = elements.drawer.getBoundingClientRect().height || Math.min(540, viewportHeight * .75);
+      let x = layout.dock === 'left' ? anchorX + 84 : layout.dock === 'right' ? anchorX - width - 12 : anchorX;
+      let y = layout.dock !== 'free' ? anchorY : anchorY >= panelHeight + 24 ? anchorY - panelHeight - 12 : anchorY + barHeight + 12;
+      elements.drawer.style.left = `${clamp(x, 12, viewportWidth - width - 12)}px`;
+      elements.drawer.style.top = `${clamp(y, 12, viewportHeight - panelHeight - 12)}px`;
+      const noticeHeight = elements.notice.getBoundingClientRect().height || 85;
+      elements.notice.style.left = `${clamp(anchorX, 12, viewportWidth - Math.min(400, viewportWidth - 24) - 12)}px`;
+      elements.notice.style.top = `${clamp(anchorY > noticeHeight + 24 ? anchorY - noticeHeight - 12 : anchorY + barHeight + 12, 12, viewportHeight - noticeHeight - 12)}px`;
+    }
+
+    function applyLayout() {
+      layout.dock = ['left', 'right'].includes(layout.dock) ? layout.dock : 'free';
+      layout.collapsed = Boolean(layout.collapsed);
+      elements.reader.dataset.dock = layout.dock;
+      elements.bar.hidden = layout.collapsed;
+      elements.orb.hidden = !layout.collapsed;
+      const width = layout.collapsed ? 60 : layout.dock === 'free' ? Math.min(760, window.innerWidth - 24) : 76;
+      host.style.width = `${Math.max(60, width)}px`;
+      const measured = elements.bar.getBoundingClientRect().height;
+      const height = layout.collapsed ? 60 : measured || (layout.dock === 'free' ? 76 : 430);
+      layout.x = clamp(number(layout.x, (window.innerWidth - width) / 2), 12, window.innerWidth - width - 12);
+      layout.y = clamp(number(layout.y, window.innerHeight - height - 24), 12, window.innerHeight - height - 12);
+      if (layout.dock === 'left') layout.x = 12;
+      if (layout.dock === 'right') layout.x = Math.max(12, window.innerWidth - width - 12);
+      host.style.left = `${layout.x}px`;
+      host.style.top = `${layout.y}px`;
+      elements.progress.setAttribute('aria-orientation', layout.dock === 'free' ? 'horizontal' : 'vertical');
+      root.querySelectorAll('.dock-button').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.dock === layout.dock)));
+      panelPosition();
+    }
+
+    function changeLayout(changes) {
+      layout = { ...layout, ...changes };
+      applyLayout();
+      emit('layout', { ...layout });
+    }
 
     function paintRange(input, value, min, max) {
       input.style.setProperty('--fill', `${max > min ? clamp((value - min) / (max - min) * 100, 0, 100) : 0}%`);
     }
 
-    function renderPosition(wordIndex) {
+    function renderPosition(wordIndex, preview = false) {
       const count = Math.max(0, number(state.totalWords, 0));
       const index = clamp(number(wordIndex, 0), 0, Math.max(0, count - 1));
-      const remaining = state.status === 'ended' ? 0 : Math.ceil(Math.max(0, count - index) / (195 * state.speed) * 60);
-      elements.time.textContent = state.status === 'loading' ? 'Preparing…' : count ? `~${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}` : '';
-      elements.time.title = 'Estimated listening time remaining';
+      const measured = !preview && Number.isFinite(state.remainingSeconds);
+      const remaining = state.status === 'ended' ? 0 : Math.ceil(Math.max(0, measured ? state.remainingSeconds : (count - index) / (195 * state.speed) * 60));
+      elements.time.textContent = state.status === 'loading' ? 'Preparing…' : count ? `${measured ? '' : '~'}${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}` : '';
+      elements.time.title = `${measured ? '' : 'Estimated '}listening time remaining (minutes:seconds)`;
       elements.progress.max = String(Math.max(1, count - 1));
       elements.progress.value = String(state.status === 'ended' ? Math.max(0, count - 1) : index);
       elements.progress.disabled = count < 2;
@@ -197,20 +262,32 @@
         lastVoiceModel = state.model;
       }
       elements.voice.value = state.voice;
-      if (!elements.voice.value) elements.voice.value = 'coral';
-      elements.voiceField.hidden = state.model === 'local';
-      elements.hint.textContent = state.model === 'local'
-        ? 'Your browser’s voice · Click a word in the article to jump there.'
-        : 'AI voice · Word timing is estimated. Click a word in the article to jump there.';
+      if (!elements.voice.value) elements.voice.value = 'alloy';
+      const local = state.model === 'local';
+      elements.voiceField.hidden = local;
+      elements.hint.textContent = local || state.timingSource === 'native'
+        ? 'Your browser’s voice · Click a word to jump there.'
+        : state.timingSource === 'aligned' ? 'AI voice · Words matched to audio. Click a word to jump there.'
+          : state.syncMode === 'precise' ? 'AI voice · Word sync improves when audio is matched. Click a word to jump there.'
+            : 'AI voice · Estimated word timing. Click a word to jump there.';
+      elements.sync.checked = state.syncMode !== 'estimated';
+      elements.sync.disabled = local;
+      elements.syncHelp.textContent = local ? 'Browser voices provide their own word timing.' : 'Adds a small transcription request to match words to the audio.';
+      elements.instructions.disabled = state.model !== 'gpt-4o-mini-tts';
+      // Do not overwrite an in-progress edit when playback publishes new words.
+      if (root.activeElement !== elements.instructions) elements.instructions.value = String(state.instructions || '').slice(0, 1000);
+      elements.promptCount.textContent = `${elements.instructions.value.length} / 1000`;
+      elements.instructionsHelp.textContent = state.model === 'gpt-4o-mini-tts'
+        ? 'Add subject, pronunciation, or delivery guidance. Hermes still reads the source verbatim. Saved when you leave this field.'
+        : 'Voice instructions work with OpenAI expressive. Your saved instructions stay available when you switch back.';
     }
 
     function render() {
       state.speed = clamp(number(state.speed, 1), 0.75, 4);
       state.model = String(state.model || 'gpt-4o-mini-tts');
-      const playing = state.status === 'playing';
-      const loading = state.status === 'loading';
+      const playing = state.status === 'playing', loading = state.status === 'loading';
       const active = playing || loading || state.status === 'paused';
-      const label = playing ? 'Pause reading' : loading ? 'Pause reading' : state.status === 'paused' ? 'Resume reading' : state.status === 'ended' ? 'Read again' : 'Start reading';
+      const label = playing || loading ? 'Pause reading' : state.status === 'paused' ? 'Resume reading' : state.status === 'ended' ? 'Read again' : 'Start reading';
       const buttonIcon = playing || loading ? 'pause' : 'play';
       if (elements.primary.dataset.icon !== buttonIcon) {
         elements.primary.innerHTML = `${icon(buttonIcon)}<span class="primary-label"></span>`;
@@ -221,6 +298,8 @@
       elements.primary.setAttribute('aria-label', label);
       elements.primary.title = label;
       elements.primary.classList.toggle('loading', loading);
+      elements.orb.dataset.playing = String(playing || loading);
+      elements.orb.title = `Expand Hermes · ${playing ? 'reading' : loading ? 'preparing audio' : state.status === 'paused' ? 'paused' : 'drag to move'}`;
       elements.title.textContent = state.title || title || 'Your article';
       elements.title.title = state.title || title || 'Your article';
       if (!seeking) renderPosition(state.wordIndex);
@@ -242,9 +321,11 @@
         ? 'OpenAI isn’t connected. Choose Browser voice in settings to listen immediately.' : '';
       const error = state.error ? String(state.error.message || state.error) : '';
       const notice = [error, connectionHint].filter(Boolean).join(' ');
+      const noticeChanged = elements.notice.textContent !== notice;
       elements.notice.hidden = !notice;
       elements.notice.textContent = notice;
-      const announcement = error || (loading ? 'Preparing audio' : state.status === 'playing' ? 'Reading' : state.status === 'paused' ? 'Reading paused' : state.status === 'ended' ? 'Finished reading' : state.status === 'stopped' ? 'Reading stopped' : 'Ready to read');
+      if (noticeChanged && host.isConnected) panelPosition();
+      const announcement = error || (loading ? 'Preparing audio' : playing ? 'Reading' : state.status === 'paused' ? 'Reading paused' : state.status === 'ended' ? 'Finished reading' : state.status === 'stopped' ? 'Reading stopped' : 'Ready to read');
       if (announcement !== lastAnnouncement) {
         elements.live.textContent = announcement;
         lastAnnouncement = announcement;
@@ -256,13 +337,52 @@
       elements.drawer.hidden = !open;
       elements.settingsToggle.setAttribute('aria-expanded', String(open));
       elements.speedToggle.setAttribute('aria-expanded', String(open));
+      if (open) panelPosition();
       if (open && focusSpeed) elements.speed.focus();
     }
 
     function changeSettings(changes) {
+      if (Object.hasOwn(changes, 'speed') && Number.isFinite(state.remainingSeconds)) state.remainingSeconds *= state.speed / changes.speed;
       state = { ...state, ...changes };
       render();
       emit('settings', changes);
+    }
+
+    function endDrag(event) {
+      if (!drag || (event && event.pointerId !== drag.pointerId)) return;
+      const moved = drag.moved;
+      const wasOrb = drag.target === elements.orb;
+      if (drag.target.hasPointerCapture?.(drag.pointerId)) drag.target.releasePointerCapture(drag.pointerId);
+      drag = null;
+      elements.reader.classList.remove('dragging');
+      window.removeEventListener('pointermove', moveDrag);
+      window.removeEventListener('pointerup', endDrag);
+      window.removeEventListener('pointercancel', endDrag);
+      if (moved) {
+        suppressOrbClick = wasOrb;
+        emit('layout', { ...layout });
+      }
+    }
+
+    function moveDrag(event) {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      const dx = event.clientX - drag.startX, dy = event.clientY - drag.startY;
+      if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+      event.preventDefault();
+      drag.moved = true;
+      layout = { ...layout, dock: 'free', x: drag.x + dx, y: drag.y + dy };
+      applyLayout();
+    }
+
+    function beginDrag(event) {
+      if (event.button !== 0 || destroyed) return;
+      suppressOrbClick = false;
+      drag = { pointerId: event.pointerId, target: event.currentTarget, startX: event.clientX, startY: event.clientY, x: layout.x, y: layout.y, moved: false };
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      elements.reader.classList.add('dragging');
+      window.addEventListener('pointermove', moveDrag, { passive: false });
+      window.addEventListener('pointerup', endDrag);
+      window.addEventListener('pointercancel', endDrag);
     }
 
     elements.primary.addEventListener('click', () => emit(state.status === 'playing' || state.status === 'loading' ? 'pause' : 'play'));
@@ -270,28 +390,58 @@
     elements.next.addEventListener('click', () => emit('next'));
     elements.stop.addEventListener('click', () => emit('stop'));
     get('.close').addEventListener('click', () => emit('close'));
+    get('.collapse').addEventListener('click', () => { setDrawer(false); changeLayout({ collapsed: true }); elements.orb.focus(); });
+    elements.orb.addEventListener('click', () => {
+      if (suppressOrbClick) { suppressOrbClick = false; return; }
+      changeLayout({ collapsed: false });
+      elements.primary.focus();
+    });
+    for (const handle of [get('.drag'), elements.orb]) {
+      handle.addEventListener('pointerdown', beginDrag);
+      handle.addEventListener('keydown', event => {
+        const directions = { ArrowLeft: [-24, 0], ArrowRight: [24, 0], ArrowUp: [0, -24], ArrowDown: [0, 24] };
+        const direction = directions[event.key];
+        if (!direction) return;
+        event.preventDefault();
+        changeLayout({ dock: 'free', x: layout.x + direction[0], y: layout.y + direction[1] });
+      });
+    }
+    root.querySelectorAll('.dock-button').forEach(button => button.addEventListener('click', () => {
+      const dock = button.dataset.dock;
+      changeLayout(dock === 'free' ? { dock, x: undefined, y: undefined } : { dock, y: 80 });
+    }));
     elements.settingsToggle.addEventListener('click', () => setDrawer(!drawerOpen));
     elements.speedToggle.addEventListener('click', () => setDrawer(!drawerOpen, true));
+    get('.drawer-dismiss').addEventListener('click', () => { setDrawer(false); elements.settingsToggle.focus(); });
+    get('.advanced').addEventListener('toggle', () => { if (drawerOpen) panelPosition(); });
     elements.speed.addEventListener('input', () => changeSettings({ speed: Number(elements.speed.value) }));
     root.querySelectorAll('.preset').forEach(button => button.addEventListener('click', () => changeSettings({ speed: Number(button.dataset.speed) })));
     elements.model.addEventListener('change', () => {
       const model = elements.model.value;
       const changes = { model };
-      if (model.startsWith('tts-1') && !LEGACY_VOICES.includes(state.voice)) changes.voice = 'coral';
+      if (model.startsWith('tts-1') && !LEGACY_VOICES.includes(state.voice)) changes.voice = 'alloy';
       changeSettings(changes);
+      panelPosition();
     });
     elements.voice.addEventListener('change', () => changeSettings({ voice: elements.voice.value }));
     elements.follow.addEventListener('change', () => changeSettings({ follow: elements.follow.checked }));
+    elements.sync.addEventListener('change', () => changeSettings({ syncMode: elements.sync.checked ? 'precise' : 'estimated' }));
+    elements.instructions.addEventListener('input', () => {
+      elements.instructions.value = elements.instructions.value.slice(0, 1000);
+      elements.promptCount.textContent = `${elements.instructions.value.length} / 1000`;
+    });
+    elements.instructions.addEventListener('change', () => {
+      const instructions = elements.instructions.value.slice(0, 1000);
+      if (instructions !== state.instructions) changeSettings({ instructions });
+    });
     elements.progress.addEventListener('pointerdown', () => { seeking = true; });
     elements.progress.addEventListener('pointerup', () => { seeking = false; });
-    elements.progress.addEventListener('input', () => {
-      seeking = true;
-      renderPosition(Number(elements.progress.value));
-    });
+    elements.progress.addEventListener('input', () => { seeking = true; renderPosition(Number(elements.progress.value), true); });
     elements.progress.addEventListener('change', () => {
       const wordIndex = Number(elements.progress.value);
       seeking = false;
       state.wordIndex = wordIndex;
+      state.remainingSeconds = undefined;
       renderPosition(wordIndex);
       emit('seek', { wordIndex });
     });
@@ -302,6 +452,7 @@
       elements.paste.hidden = !open;
       elements.pasteToggle.setAttribute('aria-expanded', String(open));
       elements.pasteToggle.lastElementChild.textContent = open ? '−' : '+';
+      panelPosition();
       if (open) elements.text.focus();
     });
     elements.text.addEventListener('input', () => { elements.pasteAction.disabled = !elements.text.value.trim(); });
@@ -320,22 +471,35 @@
         elements.settingsToggle.focus();
       }
     });
-    // Avoid page click-to-seek handlers interpreting clicks in this shadow root.
     host.addEventListener('click', event => event.stopPropagation());
+    const resize = () => { if (!destroyed) applyLayout(); };
+    window.addEventListener('resize', resize, { passive: true });
     render();
     document.documentElement.appendChild(host);
+    applyLayout();
 
+    function destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      endDrag();
+      window.removeEventListener('resize', resize);
+      host.remove();
+    }
+    host._readerDestroy = destroy;
     return {
       host,
+      expand() {
+        if (destroyed) return;
+        if (layout.collapsed) changeLayout({ collapsed: false });
+        elements.primary.focus();
+      },
       update(nextState = {}) {
         if (destroyed) return;
         state = { ...state, ...nextState };
+        if (nextState.layout) { layout = { ...layout, ...nextState.layout }; applyLayout(); }
         render();
       },
-      destroy() {
-        destroyed = true;
-        host.remove();
-      },
+      destroy,
     };
   }
 

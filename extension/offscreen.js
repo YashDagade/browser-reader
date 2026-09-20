@@ -2,10 +2,14 @@
 (() => {
   'use strict';
 
-  const API = 'http://127.0.0.1:43123';
-  const CLIENT_HEADER = { 'X-Reader-Client': 'browser-reader-v1' };
+  const timing = globalThis.HermesTiming;
   const MAX_REQUESTS = 2;
   const LOOKAHEAD = 3;
+  const MAX_CACHE_BYTES = 12 * 1024 * 1024;
+  const alignmentQueue = [];
+  let activeAlignments = 0;
+  let tickTimer = null;
+  let secondsPerWord = 0.36;
   const cache = new Map();
   const queue = [];
   let activeRequests = 0;
@@ -16,7 +20,7 @@
   let chunks = [];
   let totalWords = 0;
   let wordIndex = 0;
-  let settings = { speed: 1, voice: 'coral', model: 'gpt-4o-mini-tts' };
+  let settings = { speed: 1, voice: 'alloy', model: 'gpt-4o-mini-tts', instructions: '', syncMode: 'precise' };
   let status = 'idle';
   let error = null;
   let wantsPlayback = false;
@@ -25,8 +29,48 @@
   let lastPublishedWord = -1;
   let lastPublishedAt = 0;
 
+  function remainingSeconds() {
+    if (!totalWords || status === 'ended') return 0;
+    const index = audio ? currentChunk : chunkForWord(wordIndex);
+    const chunk = chunks[index];
+    if (!chunk) return 0;
+    const entry = cache.get(index);
+    const offset = Math.max(0, wordIndex - chunk.start);
+    const elapsed = audio && Number.isFinite(audio.currentTime) ? audio.currentTime : entry?.timings?.[offset] || 0;
+    let knownWords = 0, knownSeconds = 0;
+    if (entry?.duration) {
+      knownWords = chunk.end - wordIndex;
+      knownSeconds = Math.max(0, entry.duration - elapsed);
+    }
+    // The cache contains at most a few chunks; never walk the article per tick.
+    for (const [key, upcoming] of cache) {
+      if (key > index && upcoming.duration) {
+        knownWords += chunks[key].end - chunks[key].start;
+        knownSeconds += upcoming.duration;
+      }
+    }
+    return Math.max(0, (knownSeconds + Math.max(0, totalWords - wordIndex - knownWords) * secondsPerWord) / settings.speed);
+  }
+
   function state() {
-    return { status, wordIndex, totalWords, ...settings, error };
+    const entry = cache.get(audio ? currentChunk : chunkForWord(wordIndex));
+    return { status, wordIndex, totalWords, ...settings, error,
+      timingSource: settings.syncMode === 'precise' && entry?.timingSource === 'aligned' ? 'aligned' : 'estimated',
+      remainingSeconds: remainingSeconds() };
+  }
+
+  function stopTick() {
+    if (tickTimer !== null) clearInterval(tickTimer);
+    tickTimer = null;
+  }
+
+  function startTick() {
+    stopTick();
+    tickTimer = setInterval(() => {
+      if (status !== 'playing' || !audio) { stopTick(); return; }
+      updateWord();
+      publish(false);
+    }, 40);
   }
 
   function publish(force = true) {
@@ -57,6 +101,7 @@
   }
 
   function destroyAudio() {
+    stopTick();
     if (!audio) return;
     audio.onended = null;
     audio.onerror = null;
@@ -69,7 +114,14 @@
 
   function release(entry) {
     entry.controller?.abort();
+    cancelEntryAlignment(entry);
+    const queuedSpeech = queue.indexOf(entry);
+    if (queuedSpeech >= 0) queue.splice(queuedSpeech, 1);
+    const queuedAlignment = alignmentQueue.indexOf(entry);
+    if (queuedAlignment >= 0) alignmentQueue.splice(queuedAlignment, 1);
+    entry.blob = null;
     if (entry.url) URL.revokeObjectURL(entry.url);
+    entry.url = null;
     if (entry.phase === 'queued') entry.reject(abortError());
   }
 
@@ -78,6 +130,7 @@
     for (const entry of cache.values()) release(entry);
     cache.clear();
     queue.length = 0;
+    alignmentQueue.length = 0;
   }
 
   function fail(cause) {
@@ -90,44 +143,79 @@
     publish();
   }
 
-  // A WAV's sample count supplies its duration without an AudioContext decode.
-  // Some providers use an unknown data length while streaming; use bytes received.
-  function wavDuration(buffer) {
-    const view = new DataView(buffer);
-    const fourCC = (offset) => String.fromCharCode(...new Uint8Array(buffer, offset, 4));
-    if (buffer.byteLength < 44 || fourCC(0) !== 'RIFF' || fourCC(8) !== 'WAVE') return 0;
-    let bytesPerSecond = 0;
-    for (let offset = 12; offset + 8 <= buffer.byteLength;) {
-      const kind = fourCC(offset);
-      const declaredSize = view.getUint32(offset + 4, true);
-      const available = buffer.byteLength - offset - 8;
-      if (kind === 'fmt ' && available >= 16) bytesPerSecond = view.getUint32(offset + 16, true);
-      if (kind === 'data' && bytesPerSecond) return Math.min(declaredSize, available) / bytesPerSecond;
-      offset += 8 + declaredSize + (declaredSize % 2);
-    }
-    return 0;
-  }
-
-  function buildTimings(text, duration) {
-    const words = text.match(/\S+/gu) || [];
-    const weights = words.map((word) => {
-      const letters = word.replace(/[^\p{L}\p{N}]/gu, '').length;
-      return 0.65 + Math.min(letters, 18) * 0.085
-        + (/[.!?]["')\]]*$/.test(word) ? 0.8 : /[,;:]["')\]]*$/.test(word) ? 0.35 : 0);
-    });
-    const sum = weights.reduce((a, b) => a + b, 0) || 1;
-    let accumulated = 0;
-    const boundaries = [0];
-    for (const weight of weights) {
-      accumulated += weight;
-      boundaries.push(accumulated / sum * duration);
-    }
-    return boundaries;
-  }
-
   function chunkForWord(index) {
-    const found = chunks.findIndex((chunk) => index >= chunk.start && index < chunk.end);
-    return found >= 0 ? found : Math.max(0, chunks.length - 1);
+    let low = 0, high = chunks.length - 1;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (chunks[middle].end <= index) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  }
+
+  function cancelEntryAlignment(entry) {
+    entry.alignmentEpoch = (entry.alignmentEpoch || 0) + 1;
+    entry.alignmentController?.abort();
+    entry.alignmentController = null;
+    if (entry.alignmentPhase !== 'ready') entry.alignmentPhase = null;
+  }
+
+  function cancelAlignments() {
+    alignmentQueue.length = 0;
+    for (const entry of cache.values()) cancelEntryAlignment(entry);
+  }
+
+  function scheduleAlignment(entry, priority = false) {
+    if (settings.syncMode !== 'precise' || !entry.blob || !globalThis.HermesSpeech?.align
+      || entry.alignmentPhase === 'ready' || entry.alignmentPhase === 'fetching') return;
+    const existing = alignmentQueue.indexOf(entry);
+    if (existing >= 0) alignmentQueue.splice(existing, 1);
+    entry.alignmentPhase = 'queued';
+    if (priority) alignmentQueue.unshift(entry);
+    else alignmentQueue.push(entry);
+    pumpAlignment();
+  }
+
+  function pumpAlignment() {
+    if (activeAlignments || !wantsPlayback || settings.syncMode !== 'precise') return;
+    const entry = alignmentQueue.shift();
+    if (!entry) return;
+    if (entry.generation !== generation || cache.get(entry.index) !== entry || !entry.blob) {
+      pumpAlignment();
+      return;
+    }
+    const epoch = entry.alignmentEpoch || 0;
+    const controller = new AbortController();
+    entry.alignmentController = controller;
+    entry.alignmentPhase = 'fetching';
+    activeAlignments += 1;
+    const timeout = setTimeout(() => controller.abort('timeout'), 60000);
+    (async () => {
+      const buffer = await entry.blob.arrayBuffer();
+      if (controller.signal.aborted) return;
+      const result = await globalThis.HermesSpeech.align(entry.payload, buffer, controller.signal);
+      if (controller.signal.aborted || epoch !== (entry.alignmentEpoch || 0)
+        || entry.generation !== generation || cache.get(entry.index) !== entry || settings.syncMode !== 'precise') return;
+      const aligned = timing.align(entry.text, result?.words, entry.duration, entry.estimatedTimings);
+      entry.alignmentPhase = 'ready';
+      if (aligned) {
+        entry.alignedTimings = aligned.boundaries;
+        entry.timings = aligned.boundaries;
+        entry.timingSource = 'aligned';
+        if (entry.index === currentChunk && status === 'playing') {
+          updateWord();
+          publish();
+        }
+      }
+    })().catch(() => {
+      // Alignment improves navigation, but never blocks or fails speech playback.
+      if (epoch === (entry.alignmentEpoch || 0)) entry.alignmentPhase = 'ready';
+    }).finally(() => {
+      clearTimeout(timeout);
+      if (entry.alignmentController === controller) entry.alignmentController = null;
+      activeAlignments -= 1;
+      pumpAlignment();
+    });
   }
 
   function updateWord() {
@@ -152,33 +240,40 @@
     // A hung local service must not leave playback stuck in Loading indefinitely.
     const timeout = setTimeout(() => controller.abort('timeout'), 90000);
     try {
-      const response = await fetch(`${API}/v1/speech`, {
-        method: 'POST',
-        headers: { ...CLIENT_HEADER, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: entry.text, voice: entry.voice, model: entry.model }),
-        signal: controller.signal,
-      });
+      if (!globalThis.HermesSpeech?.speech) throw new Error('The speech connection could not be loaded. Reload the extension.');
+      const response = await globalThis.HermesSpeech.speech(entry.payload, controller.signal);
       if (!response.ok) {
         let detail;
         try {
           const payload = await response.json();
           detail = typeof payload.error === 'string' ? payload.error : payload.error?.message;
         } catch { /* A proxy may send a plain status response. */ }
-        throw new Error(detail || `Speech request failed (${response.status}). Check the local reader service.`);
+        throw new Error(detail || `Speech request failed (${response.status}). Check the speech connection in settings.`);
       }
       const buffer = await response.arrayBuffer();
       if (entry.generation !== generation || cache.get(entry.index) !== entry) throw abortError();
       if (buffer.byteLength < 44) throw new Error('The speech service returned empty audio. Please try again.');
-      entry.duration = wavDuration(buffer);
-      entry.timings = buildTimings(entry.text, entry.duration);
-      entry.url = URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+      if (buffer.byteLength > MAX_CACHE_BYTES) throw new Error('This audio passage is too large. Try a shorter selection.');
+      entry.window = timing.inspectWav(buffer);
+      entry.duration = entry.window.duration;
+      if (!entry.duration) throw new Error('The speech service returned unsupported audio. Please try again.');
+      entry.estimatedTimings = timing.estimate(entry.text, entry.duration, entry.window);
+      entry.timings = entry.estimatedTimings;
+      entry.timingSource = 'estimated';
+      entry.bytes = buffer.byteLength;
+      entry.blob = new Blob([buffer], { type: 'audio/wav' });
+      entry.url = URL.createObjectURL(entry.blob);
+      secondsPerWord = secondsPerWord * 0.65 + entry.duration / Math.max(1, chunks[entry.index].end - chunks[entry.index].start) * 0.35;
+      enforceByteBudget();
+      if (cache.get(entry.index) !== entry) throw abortError();
+      scheduleAlignment(entry, entry.index === chunkForWord(wordIndex));
       return entry;
     } catch (cause) {
       if (controller.signal.aborted && controller.signal.reason === 'timeout') {
         throw new Error('The speech request timed out. Check your connection and try again.');
       }
       if (cause instanceof TypeError) {
-        throw new Error('The local reader service is unavailable. Start it, or choose the built-in voice.');
+        throw new Error('The speech connection is unavailable. Check settings, or choose the built-in voice.');
       }
       throw cause;
     } finally {
@@ -187,7 +282,7 @@
   }
 
   function pump() {
-    while (activeRequests < MAX_REQUESTS && queue.length) {
+    while (wantsPlayback && activeRequests < MAX_REQUESTS && queue.length) {
       const entry = queue.shift();
       if (entry.generation !== generation || cache.get(entry.index) !== entry) continue;
       activeRequests += 1;
@@ -219,8 +314,9 @@
     }
     const chunk = chunks[index];
     entry = {
-      index, generation, text: chunk.text, voice: settings.voice, model: settings.model,
-      phase: 'queued', url: null, duration: 0, timings: null,
+      index, generation, text: chunk.text,
+      payload: { text: chunk.text, voice: settings.voice, model: settings.model, instructions: settings.instructions },
+      phase: 'queued', url: null, blob: null, bytes: 0, duration: 0, timings: null,
     };
     entry.promise = new Promise((resolve, reject) => { entry.resolve = resolve; entry.reject = reject; });
     // Lookahead failures are surfaced only if this chunk is actually played.
@@ -230,6 +326,20 @@
     else queue.push(entry);
     pump();
     return entry.promise;
+  }
+
+  function enforceByteBudget() {
+    let bytes = 0;
+    for (const entry of cache.values()) bytes += entry.bytes || 0;
+    const target = audio ? currentChunk : chunkForWord(wordIndex);
+    const removable = [...cache.entries()].filter(([index]) => index !== target)
+      .sort(([a], [b]) => Math.abs(b - target) - Math.abs(a - target));
+    for (const [index, entry] of removable) {
+      if (bytes <= MAX_CACHE_BYTES) break;
+      bytes -= entry.bytes || 0;
+      release(entry);
+      cache.delete(index);
+    }
   }
 
   function maintainCache(index) {
@@ -296,6 +406,8 @@
           wordIndex = totalWords ? totalWords - 1 : 0;
           wantsPlayback = false;
           status = 'ended';
+          destroyAudio();
+          clearCache();
           publish();
           return;
         }
@@ -310,8 +422,11 @@
       await waitForMetadata(player);
       if (thisOperation !== operation || thisGeneration !== generation || !wantsPlayback) return;
       if (Number.isFinite(player.duration) && player.duration > 0) {
-        entry.duration = player.duration;
-        entry.timings = buildTimings(entry.text, player.duration);
+        if (Math.abs(entry.duration - player.duration) > 0.1) {
+          entry.duration = player.duration;
+          entry.estimatedTimings = timing.estimate(entry.text, player.duration, entry.window);
+          if (entry.timingSource !== 'aligned') entry.timings = entry.estimatedTimings;
+        }
       }
       const offset = Math.max(0, Math.min(entry.timings.length - 2, targetWord - chunks[index].start));
       player.currentTime = entry.timings[offset] || 0;
@@ -321,6 +436,9 @@
         return;
       }
       status = 'playing';
+      startTick();
+      scheduleAlignment(entry, true);
+      pumpAlignment();
       publish();
     } catch (cause) {
       if (thisOperation !== operation || thisGeneration !== generation || cause?.name === 'AbortError') return;
@@ -344,6 +462,10 @@
           return;
         }
         status = 'playing';
+        startTick();
+        const entry = cache.get(currentChunk);
+        if (entry) scheduleAlignment(entry, true);
+        pumpAlignment();
         publish();
       }).catch((cause) => {
         if (audio === player && wantsPlayback && operation === thisOperation) fail(cause);
@@ -352,6 +474,7 @@
   }
 
   function pause() {
+    stopTick();
     wantsPlayback = false;
     operation += 1;
     if (status === 'loading') {
@@ -381,6 +504,12 @@
     wordIndex = Math.max(0, Math.min(totalWords - 1, Math.floor(requested)));
     operation += 1;
     destroyAudio();
+    cancelAlignments();
+    // A paused jump must also cancel unrelated preparation.
+    const index = chunkForWord(wordIndex);
+    for (const [key, entry] of cache) {
+      if (key < index - 1 || key > index + LOOKAHEAD) { release(entry); cache.delete(key); }
+    }
     error = null;
     if (wantsPlayback) startAtWord();
     else {
@@ -393,18 +522,30 @@
     updateWord();
     const changedVoice = next.voice !== undefined && next.voice !== settings.voice;
     const changedModel = next.model !== undefined && next.model !== settings.model;
+    const changedInstructions = next.instructions !== undefined && next.instructions !== settings.instructions;
+    const oldSyncMode = settings.syncMode;
     settings = {
       speed: next.speed === undefined ? settings.speed : speed(next.speed),
       voice: typeof next.voice === 'string' && next.voice ? next.voice : settings.voice,
       model: typeof next.model === 'string' && next.model ? next.model : settings.model,
+      instructions: typeof next.instructions === 'string' ? next.instructions.slice(0, 1500) : settings.instructions,
+      syncMode: next.syncMode === 'estimated' ? 'estimated' : next.syncMode === 'precise' ? 'precise' : settings.syncMode,
     };
-    if (changedVoice || changedModel) {
+    if (changedVoice || changedModel || changedInstructions) {
       operation += 1;
       destroyAudio();
       clearCache();
       if (wantsPlayback) startAtWord();
       else publish();
     } else {
+      if (oldSyncMode !== settings.syncMode) {
+        cancelAlignments();
+        for (const entry of cache.values()) {
+          if (settings.syncMode === 'estimated') entry.timings = entry.estimatedTimings;
+          else if (entry.alignedTimings) entry.timings = entry.alignedTimings;
+          else scheduleAlignment(entry, entry.index === currentChunk);
+        }
+      }
       if (audio) audio.playbackRate = settings.speed;
       publish();
     }
@@ -422,11 +563,12 @@
       && Number.isInteger(chunk.end) && chunk.end > chunk.start) : [];
     totalWords = chunks.length ? Math.max(0, Number(message.totalWords) || chunks.at(-1).end) : 0;
     wordIndex = 0;
+    secondsPerWord = 0.36;
     status = 'idle';
     error = null;
     configure(message.settings || {});
     if ('mediaSession' in navigator && typeof MediaMetadata !== 'undefined') {
-      navigator.mediaSession.metadata = new MediaMetadata({ title: 'Browser Reader', artist: 'Article narration' });
+      navigator.mediaSession.metadata = new MediaMetadata({ title: 'Hermes', artist: 'Article narration' });
     }
   }
 
@@ -440,9 +582,11 @@
         case 'play': play(); break;
         case 'pause': pause(); break;
         case 'stop': stop(); break;
+        case 'unload': sessionId = null; stop(); chunks = []; totalWords = 0; tabId = null; break;
         case 'seek': seek(message.wordIndex); break;
         case 'settings': configure(message.settings || {}); break;
         case 'snapshot': break;
+        case 'get-state': sendResponse({ ok: true, state: { sessionId, ...state() } }); return false;
         default: sendResponse({ ok: false, error: 'Unknown audio command' }); return;
       }
       sendResponse({ ok: true, state: state() });
@@ -451,12 +595,6 @@
     }
     return false;
   });
-
-  setInterval(() => {
-    if (status !== 'playing' || !audio) return;
-    updateWord();
-    publish(false);
-  }, 80);
 
   if ('mediaSession' in navigator) {
     for (const [action, handler] of Object.entries({

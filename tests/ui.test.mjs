@@ -70,7 +70,7 @@ test('voice and engine settings exclude incompatible voices and local mode does 
   const model = get('#reader-model');
   model.value = 'tts-1';
   dispatch(model, 'change');
-  assert.deepEqual(actions.at(-1), { action: 'settings', payload: { model: 'tts-1', voice: 'coral' } });
+  assert.deepEqual(actions.at(-1), { action: 'settings', payload: { model: 'tts-1', voice: 'alloy' } });
   const voices = Array.from(get('#reader-voice').options, option => option.value);
   assert.ok(!voices.includes('marin'));
   assert.ok(!voices.includes('cedar'));
@@ -170,4 +170,179 @@ test('reopening replaces the existing player instead of stacking duplicates', t 
   assert.equal(replacement.host.isConnected, true);
   assert.equal(dom.window.document.querySelectorAll('#browser-reader-root').length, 1);
   replacement.destroy();
+});
+
+test('collapsing to an orb and expanding preserve playback and persist layout without touching audio settings', t => {
+  const { ui, get, actions } = fixture(t);
+  ui.update({ status: 'playing', wordIndex: 33 });
+  get('.settings-toggle').click();
+  get('.collapse').click();
+  assert.equal(get('.bar').hidden, true);
+  assert.equal(get('.drawer').hidden, true);
+  assert.equal(get('.orb').hidden, false);
+  assert.equal(get('.orb').getAttribute('aria-label'), 'Expand Hermes');
+  assert.equal(get('.orb').dataset.playing, 'true');
+  assert.equal(actions.at(-1).action, 'layout');
+  assert.equal(actions.at(-1).payload.collapsed, true);
+  ui.update({ wordIndex: 34 });
+  get('.orb').click();
+  assert.equal(get('.bar').hidden, false);
+  assert.equal(get('.orb').hidden, true);
+  assert.equal(get('.primary').getAttribute('aria-label'), 'Pause reading');
+  assert.equal(get('.progress').value, '34');
+  assert.equal(actions.at(-1).payload.collapsed, false);
+  assert.ok(actions.every(action => action.action === 'layout'));
+});
+
+test('docking uses vertical controls, floating restores horizontal controls, and resize clamps the widget', t => {
+  const { dom, ui, get, actions } = fixture(t);
+  get('.dock-button[data-dock="right"]').click();
+  assert.equal(get('.reader').dataset.dock, 'right');
+  assert.equal(get('.progress').getAttribute('aria-orientation'), 'vertical');
+  assert.equal(get('.dock-button[data-dock="right"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(Number.parseFloat(ui.host.style.left), dom.window.innerWidth - 76 - 12);
+  assert.equal(actions.at(-1).payload.dock, 'right');
+  get('.dock-button[data-dock="left"]').click();
+  assert.equal(ui.host.style.left, '12px');
+  get('.dock-button[data-dock="free"]').click();
+  assert.equal(get('.progress').getAttribute('aria-orientation'), 'horizontal');
+  assert.equal(actions.at(-1).payload.dock, 'free');
+  ui.update({ layout: { x: 700, y: 700, collapsed: true } });
+  Object.defineProperty(dom.window, 'innerWidth', { value: 360, configurable: true });
+  Object.defineProperty(dom.window, 'innerHeight', { value: 300, configurable: true });
+  dom.window.dispatchEvent(new dom.window.Event('resize'));
+  assert.equal(ui.host.style.left, '288px');
+  assert.equal(ui.host.style.top, '228px');
+});
+
+function pointer(window, type, props) {
+  const event = new window.Event(type, { bubbles: true, cancelable: true, composed: true });
+  Object.assign(event, { pointerId: 1, button: 0, clientX: 0, clientY: 0, ...props });
+  return event;
+}
+
+test('pointer dragging persists once, dragging the orb does not expand it, and destroy releases global handlers', t => {
+  const { dom, ui, get, actions } = fixture(t, { settings: { layout: { x: 100, y: 100, collapsed: true } } });
+  const orb = get('.orb');
+  orb.dispatchEvent(pointer(dom.window, 'pointerdown', { clientX: 110, clientY: 110 }));
+  dom.window.dispatchEvent(pointer(dom.window, 'pointermove', { clientX: 210, clientY: 230 }));
+  assert.equal(ui.host.style.left, '200px');
+  assert.equal(ui.host.style.top, '220px');
+  assert.equal(actions.length, 0);
+  dom.window.dispatchEvent(pointer(dom.window, 'pointerup', { clientX: 210, clientY: 230 }));
+  assert.deepEqual(actions, [{ action: 'layout', payload: { dock: 'free', collapsed: true, x: 200, y: 220 } }]);
+  orb.click();
+  assert.equal(get('.bar').hidden, true);
+  orb.click();
+  assert.equal(get('.bar').hidden, false);
+  get('.drag').dispatchEvent(pointer(dom.window, 'pointerdown', { clientX: 200, clientY: 220 }));
+  ui.destroy();
+  const left = ui.host.style.left;
+  const count = actions.length;
+  dom.window.dispatchEvent(pointer(dom.window, 'pointermove', { clientX: 500, clientY: 500 }));
+  dom.window.dispatchEvent(pointer(dom.window, 'pointerup', { clientX: 500, clientY: 500 }));
+  dom.window.dispatchEvent(new dom.window.Event('resize'));
+  assert.equal(ui.host.style.left, left);
+  assert.equal(actions.length, count);
+});
+
+test('arrow keys move the toolbar without seeking or leaking keyboard shortcuts to the page', t => {
+  const { dom, ui, get, actions } = fixture(t, { settings: { layout: { x: 100, y: 100 } } });
+  let pageKeys = 0;
+  dom.window.document.addEventListener('keydown', () => pageKeys++);
+  get('.drag').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, composed: true, cancelable: true }));
+  assert.equal(ui.host.style.top, '124px');
+  assert.equal(actions.at(-1).action, 'layout');
+  assert.equal(pageKeys, 0);
+});
+
+test('voice instructions survive playback updates, commit once, are bounded, and remain saved for unsupported engines', t => {
+  const { ui, get, actions, dispatch } = fixture(t);
+  assert.deepEqual(Array.from(get('#reader-voice').options).slice(0, 3).map(option => option.value), ['alloy', 'cedar', 'nova']);
+  const input = get('#reader-instructions');
+  get('.settings-toggle').click();
+  get('.advanced').open = true;
+  input.focus();
+  input.value = 'This is a biology article. Pronounce gene names carefully.';
+  dispatch(input, 'input');
+  ui.update({ status: 'playing', wordIndex: 55 });
+  assert.equal(input.value, 'This is a biology article. Pronounce gene names carefully.');
+  assert.equal(actions.length, 0);
+  dispatch(input, 'change');
+  assert.equal(actions.at(-1).payload.instructions, input.value);
+  dispatch(input, 'change');
+  assert.equal(actions.length, 1);
+  input.value = 'x'.repeat(1100);
+  dispatch(input, 'input');
+  dispatch(input, 'change');
+  assert.equal(actions.at(-1).payload.instructions.length, 1000);
+  assert.equal(get('.prompt-count').textContent, '1000 / 1000');
+  get('#reader-model').value = 'tts-1';
+  dispatch(get('#reader-model'), 'change');
+  assert.equal(input.disabled, true);
+  assert.match(get('#reader-instructions-help').textContent, /OpenAI expressive/);
+  get('#reader-model').value = 'gpt-4o-mini-tts';
+  dispatch(get('#reader-model'), 'change');
+  assert.equal(input.disabled, false);
+  assert.equal(input.value.length, 1000);
+});
+
+test('timing source is explained accurately and precise sync is configurable without changing voice', t => {
+  const { ui, get, actions, dispatch } = fixture(t);
+  assert.equal(get('#reader-sync').checked, true);
+  ui.update({ timingSource: 'aligned' });
+  assert.match(get('.timing-hint').textContent, /Words matched to audio/);
+  get('#reader-sync').checked = false;
+  dispatch(get('#reader-sync'), 'change');
+  assert.deepEqual(actions.at(-1), { action: 'settings', payload: { syncMode: 'estimated' } });
+  ui.update({ timingSource: 'estimated' });
+  assert.match(get('.timing-hint').textContent, /Estimated word timing/);
+  ui.update({ model: 'local', timingSource: 'native' });
+  assert.equal(get('#reader-sync').disabled, true);
+  assert.match(get('#reader-sync-help').textContent, /own word timing/);
+});
+
+test('remaining time always uses minutes and seconds, updates with playback and speed, and falls back without measured duration', t => {
+  const { ui, get } = fixture(t, { totalWords: 24000 });
+  ui.update({ remainingSeconds: 7321, status: 'playing' });
+  assert.equal(get('.time').textContent, '122:01');
+  ui.update({ remainingSeconds: 7319 });
+  assert.equal(get('.time').textContent, '121:59');
+  get('[data-speed="2"]').click();
+  assert.equal(get('.time').textContent, '61:00');
+  ui.update({ remainingSeconds: undefined, wordIndex: 23900 });
+  assert.equal(get('.time').textContent, '~0:16');
+  ui.update({ status: 'ended', remainingSeconds: 50 });
+  assert.equal(get('.time').textContent, '0:00');
+});
+
+test('toolbar invocation expands a collapsed player without changing or restarting playback', t => {
+  const { ui, get, actions } = fixture(t, { settings: { layout: { collapsed: true } } });
+  ui.update({ status: 'playing', wordIndex: 67 });
+  ui.expand();
+  assert.equal(get('.bar').hidden, false);
+  assert.equal(get('.orb').hidden, true);
+  assert.equal(get('.primary').getAttribute('aria-label'), 'Pause reading');
+  assert.equal(get('.progress').value, '67');
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0].action, 'layout');
+  assert.equal(actions[0].payload.collapsed, false);
+  ui.expand();
+  assert.equal(actions.length, 1);
+  ui.destroy();
+  ui.expand();
+  assert.equal(actions.length, 1);
+});
+
+test('all supported voices retain the actual saved selection and legacy models retain their compatible voices', t => {
+  const { ui, get, actions, dispatch } = fixture(t, { settings: { voice: 'echo' } });
+  assert.equal(get('#reader-voice').options.length, 13);
+  assert.equal(get('#reader-voice').value, 'echo');
+  get('#reader-model').value = 'tts-1';
+  dispatch(get('#reader-model'), 'change');
+  assert.deepEqual(actions.at(-1), { action: 'settings', payload: { model: 'tts-1' } });
+  assert.equal(get('#reader-voice').value, 'echo');
+  assert.equal(get('#reader-voice').options.length, 9);
+  ui.update({ model: 'gpt-4o-mini-tts', voice: 'verse' });
+  assert.equal(get('#reader-voice').value, 'verse');
 });
