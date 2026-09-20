@@ -92,6 +92,49 @@ test('finds a personal essay in div layouts and excludes a large linked menu', (
   dom.window.close();
 });
 
+test('Substack newsletter-post is prose, with title and body but no author UI or footer', () => {
+  const dom = fixture(`<div role="main"><article class="typography newsletter-post post">
+    <div class="post-header"><h1>A study of comic timing</h1><h3 class="subtitle">Two panels, one idea</h3><div>AUTHOR NAME AND DATE<button>Share</button></div></div>
+    <div><div class="dt-post-body"><div class="available-content"><div class="body markup">
+      <p>The first panel establishes the scene. The <em>second</em> panel changes our expectations, and that surprise makes the joke work.</p>
+      <figure><img alt="Image description"><figcaption>Image caption</figcaption></figure>
+      <p>We compare the drawings while preserving the writer’s original words.</p>
+      <div class="subscription-widget-wrap"><div class="subscription-widget"><p>Thanks for reading. Subscribe for more!</p><form><input></form></div></div>
+      <p class="button-wrapper"><a class="button" href="/archive">More posts</a></p>
+      <div class="footnote"><p>An author’s note adds useful context.</p></div>
+    </div></div></div><div>Subscribe to this publication and accept the terms.</div><div class="post-footer">12 Likes and 2 Restacks</div></div>
+    </article><div class="comments"><p>A reader comment.</p></div><div>© 2026 Example · Substack is the home for great culture</div></div>`);
+  const before = dom.window.document.body.innerHTML;
+  const result = dom.window.ReaderExtract.extract();
+  assert.equal(texts(result), 'A study of comic timing Two panels, one idea The first panel establishes the scene. The second panel changes our expectations, and that surprise makes the joke work. We compare the drawings while preserving the writer’s original words. An author’s note adds useful context.');
+  assert.equal(result.title, 'A study of comic timing');
+  assert.equal(dom.window.document.body.innerHTML, before);
+  for (const word of result.words) assert.equal(word.range.toString(), word.text);
+  dom.window.close();
+});
+
+test('short and link-heavy Substack posts win over large recommendation lists and copyright', () => {
+  const dom = fixture(`<article class="newsletter-post"><div class="post-header"><h1>Reading list</h1></div><div class="available-content"><div class="body markup"><p><a href="/paper">An interesting paper to read today.</a></p></div></div></article><div>${'Recommended stories and publication details. '.repeat(100)}<p>Copyright 2026 Substack</p></div>`);
+  const result = dom.window.ReaderExtract.extract();
+  assert.equal(texts(result), 'Reading list An interesting paper to read today.');
+  assert.equal(result.title, 'Reading list');
+  dom.window.close();
+});
+
+test('Substack reading respects visibility and paywalls and never falls back to copyright', () => {
+  const dom = fixture(`<article class="newsletter-post"><div class="post-header"><h1>A public preview</h1></div><div class="available-content"><div class="body markup"><p>Only this introduction is available.</p><div class="paywall"><p>Subscriber-only copy.</p></div><p hidden>Hidden copy.</p><p style="display:none">Invisible copy.</p><p aria-hidden="true">Hidden duplicate.</p><p inert>Inert copy.</p></div></div></article><div>Copyright 2026 Substack</div><div class="newsletter"><p>Join our newsletter.</p></div><article class="newsletter-post" hidden><div class="available-content"><div class="body markup">${'Hidden duplicate post. '.repeat(100)}</div></div></article>`);
+  assert.equal(texts(dom.window.ReaderExtract.extract()), 'A public preview Only this introduction is available.');
+  dom.window.document.querySelector('.body.markup').setAttribute('hidden', '');
+  assert.equal(texts(dom.window.ReaderExtract.extract()), 'A public preview');
+  dom.window.close();
+});
+
+test('the newsletter-post exception does not override a hidden or excluded ancestor', () => {
+  const dom = fixture('<main><p>Read this visible essay.</p><div class="newsletter"><article class="newsletter-post"><div class="available-content"><div class="body markup"><p>Signup content.</p></div></div></article></div><article class="newsletter-post paywall"><div class="available-content"><div class="body markup">Paid content.</div></div></article></main>');
+  assert.equal(texts(dom.window.ReaderExtract.extract()), 'Read this visible essay.');
+  dom.window.close();
+});
+
 test('chunks cover all words once, start small, preserve jargon, and stay within API limits', () => {
   const dom = fixture('');
   const source = 'An eigenvalue decomposition of the Hamiltonian preserves self-adjointness and noncommutativity. '.repeat(55);

@@ -7,7 +7,7 @@ Click **Start reading**, follow the highlighted words, and change speed from **0
 - A readable floating player with play, pause, stop, passage skipping, and a position slider.
 - Drag it anywhere, drop it near an edge to dock, or collapse it to a small movable button while listening.
 - Double-click a word to jump there, follow along with optional auto-scroll, or read selected/pasted text. Single clicks keep their normal behavior.
-- Local article extraction skips common navigation, ads, controls, and captions. No LLM rewrites the article.
+- Local article extraction skips common navigation, ads, controls, and captions. Substack posts use their title and article body, excluding publication footers, recommendations, and signup widgets. No LLM rewrites the article.
 - OpenAI voices including **Alloy**, **Cedar**, and **Nova**, with delivery and pronunciation guidance for `gpt-4o-mini-tts`.
 - Short initial audio chunks, bounded prefetch, optional background word alignment, and saved audio for repeat listening. Speed changes never trigger an API request.
 

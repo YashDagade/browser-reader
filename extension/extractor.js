@@ -84,7 +84,11 @@
         eligible.set(element, false);
         return false;
       }
-      const identity = `${element.id || ''} ${typeof element.className === 'string' ? element.className : ''}`;
+      // Substack's actual article is named newsletter-post. Exempt that exact
+      // class on articles, without weakening signup, paywall, or ancestor rules.
+      const classes = typeof element.className === 'string' ? element.className.split(/\s+/).filter(name =>
+        !(element.tagName === 'ARTICLE' && name === 'newsletter-post')).join(' ') : '';
+      const identity = `${element.id || ''} ${classes}`;
       const role = element.getAttribute('role');
       const editable = element.hasAttribute('contenteditable') && element.getAttribute('contenteditable') !== 'false';
       // Some essays turn vocabulary into inline buttons that open a glossary.
@@ -128,6 +132,7 @@
     }
 
     let root = doc.body;
+    let readingRegions = null;
     if (!selectedRange) {
       const stats = new Map();
       for (const node of allNodes) {
@@ -152,6 +157,18 @@
         const score = Math.pow(stat.characters, 0.82) * Math.pow(1 - linkRatio, 1.8) * boost;
         if (score > best) { best = score; root = candidate; }
       }
+      // Published Substack posts have explicit body boundaries. Use them even
+      // for short or link-heavy posts, where generic density scoring can favor
+      // recommendations or a copyright footer. This also works on custom domains.
+      const posts = [...doc.querySelectorAll('article.newsletter-post')].filter(allowed).map(post => {
+        const bodies = [...post.querySelectorAll('.available-content .body.markup')]
+          .filter(body => body.closest('article') === post);
+        return { post, bodies, characters: bodies.reduce((sum, body) => sum + (stats.get(body)?.characters || 0), 0) };
+      }).filter(item => item.bodies.length).sort((a, b) => b.characters - a.characters);
+      if (posts.length) {
+        root = posts[0].post;
+        readingRegions = [...root.querySelectorAll('.post-header h1, .post-header .subtitle'), ...posts[0].bodies];
+      }
     }
 
     const blocks = [];
@@ -165,6 +182,7 @@
     }
     for (const node of allNodes) {
       if (!selectedRange && !root.contains(node)) continue;
+      if (readingRegions && (!readingRegions.some(region => region.contains(node)) || node.parentElement.closest('.button-wrapper'))) continue;
       let start = 0;
       let end = node.nodeValue.length;
       if (selectedRange) {
