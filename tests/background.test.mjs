@@ -10,13 +10,14 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 
 function harness() {
   let listener, hasOffscreen = false, audioSession = null, documentAlive=true;
-  const events = {}, messages = [], spoken = [], audio = [], saved = {}, local = {hermesConnection:{mode:'direct',apiKey:'private-test-value'}}, accesses=[];
+  const events = {}, messages = [], audio = [], saved = {}, local = {hermesConnection:{mode:'direct',apiKey:'private-test-value',consent:true}}, accesses=[];
   const event = name => ({ addListener: callback => { events[name] = callback; } });
   const clone = value => JSON.parse(JSON.stringify(value));
   const chrome = {
     runtime: {
       onMessage: { addListener: callback => { listener = callback; } },
       onInstalled: event('installed'),
+      openOptionsPage: async()=>{events.optionsOpened=true;},
       getURL: path => `chrome-extension://hermes/${path}`,
       getContexts: async () => hasOffscreen ? [{}] : [],
       sendMessage: async message => {audio.push(clone(message));if(message.action==='load')audioSession=message.sessionId;if(message.action==='unload')audioSession=null;return {ok:true,state:{sessionId:audioSession}};},
@@ -32,11 +33,6 @@ function harness() {
       sendMessage: async (tabId, message) => { messages.push({ tabId, ...clone(message) });if(message.type==='hermes-probe')return documentAlive?{sessionId:message.sessionId}:undefined; },
       onRemoved: event('removed'), onUpdated: event('updated'),
     },
-    tts: {
-      stop() {}, resume() {},
-      getVoices: callback => callback([{ voiceName: 'Samantha', lang: 'en-US', remote: false }]),
-      speak: (text, options, callback) => { spoken.push({ text, options }); callback(); },
-    },
     action: { onClicked: event('clicked'), setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
     commands: { onCommand: event('command') },
     contextMenus: { onClicked: event('context') },
@@ -47,33 +43,37 @@ function harness() {
   });
   restartWorker();
   const command = (action, extra = {}, tabId = 7) => new Promise(resolve => listener({ target: 'background', type: 'control', action, sessionId: 'article', ...extra }, { tab: { id: tabId }, documentId:'document-'+tabId, url:'https://article.example/essay#intro' }, resolve));
-  const load = (model = 'local') => command('load', {
+  const load = (model = 'gpt-4o-mini-tts') => command('load', {
     article: { title: 'Essay', lang: 'en', chunks: [{ text: 'One two three four.', start: 0, end: 4 }, { text: 'Five six seven eight.', start: 4, end: 8 }], totalWords: 8 },
     settings: { model, speed: 1.5 },
   });
   const state = (value, sender = { url: chrome.runtime.getURL('offscreen.html') }, sessionId = 'article') => listener({ target: 'background', type: 'state', sessionId, state: value }, sender, () => {});
   const message=(type,extra={},sender={tab:{id:7}})=>new Promise(resolve=>listener({target:'background',type,...extra},sender,resolve));
-  return {restartWorker,replaceDocument:()=>{documentAlive=false;},command,load,state,message,spoken,messages,audio,events,saved,local,accesses,hasOffscreen:()=>hasOffscreen,expire:()=>{hasOffscreen=false;audioSession=null;}};
+  return {restartWorker,replaceDocument:()=>{documentAlive=false;},command,load,state,message,messages,audio,events,saved,local,accesses,hasOffscreen:()=>hasOffscreen,expire:()=>{hasOffscreen=false;audioSession=null;}};
 }
 
-test('local pause and seek invalidate late native voice events and resume at the selected word', async () => {
-  const app = harness();
+test('default and legacy browser settings use OpenAI without a native TTS API', async () => {
+  const app=harness();
+  assert.equal((await app.message('preferences')).settings.model,'gpt-4o-mini-tts');
+  await app.load('local');
+  await app.command('play');
+  assert.equal(app.audio.find(m=>m.action==='load').settings.model,'gpt-4o-mini-tts');
+  await app.command('pause');await app.command('seek',{wordIndex:5});
+  const loads=app.audio.filter(m=>m.action==='load').length;
+  await app.command('settings',{settings:{speed:4}});
+  assert.equal(app.audio.at(-1).action,'settings');
+  assert.equal(app.audio.at(-1).settings.speed,4);
+  assert.equal(app.audio.filter(m=>m.action==='load').length,loads);
+});
+
+test('missing consent blocks playback with setup guidance and no audio document',async()=>{
+  const app=harness();app.local.hermesConnection.consent=false;
   await app.load();
-  await app.command('play');
-  const first = app.spoken[0];
-  first.options.onEvent({ type: 'start' });
-  first.options.onEvent({ type: 'word', charIndex: 8 });
-  assert.equal(app.messages.at(-1).state.wordIndex, 2);
-  await app.command('pause');
-  first.options.onEvent({ type: 'end' });
-  assert.equal(app.spoken.length, 1);
-  await app.command('seek', { wordIndex: 5 });
-  assert.equal(app.messages.at(-1).state.status, 'paused');
-  await app.command('play');
-  assert.equal(app.spoken.at(-1).text, 'six seven eight.');
-  await app.command('settings', { settings: { speed: 4 } });
-  assert.equal(app.spoken.at(-1).text, 'six seven eight.');
-  assert.equal(app.spoken.at(-1).options.rate, 4);
+  assert.match((await app.command('play')).error,/Connect OpenAI/);
+  assert.equal(app.hasOffscreen(),false);assert.equal(app.audio.length,0);
+  assert.equal(app.messages.at(-1).state.connected,false);
+  assert.equal((await app.command('setup',{},8)).code,'STALE_SESSION');
+  await app.command('setup');assert.equal(app.events.optionsOpened,true);
 });
 
 test('controls are bound to the active tab and session; only the offscreen page may publish cloud state', async () => {
@@ -102,13 +102,12 @@ test('cloud recovery reloads an expired offscreen document at the saved word', a
   assert.equal(app.audio.at(-2).wordIndex, 5);
 });
 
-test('switching a playing local session to cloud preserves position and closing its tab stops playback', async () => {
+test('switching API models during playback preserves position and closing its tab stops playback', async () => {
   const app = harness();
   await app.load();
   await app.command('play');
-  app.spoken[0].options.onEvent({ type: 'start' });
-  app.spoken[0].options.onEvent({ type: 'word', charIndex: 8 });
-  await app.command('settings', { settings: { model: 'gpt-4o-mini-tts' } });
+  app.state({status:'playing',wordIndex:2});await flush();
+  await app.command('settings', { settings: { model: 'tts-1' } });
   assert.deepEqual(app.audio.slice(-3).map(message => message.action), ['load', 'seek', 'play']);
   assert.equal(app.audio.at(-2).wordIndex, 2);
   app.events.removed(7);

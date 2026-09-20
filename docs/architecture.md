@@ -1,6 +1,6 @@
 # How Hermes works
 
-Hermes is a Manifest V3 Chrome extension. It extracts article text locally, keeps the webpage as the reading surface, and offers native browser speech or OpenAI narration. OpenAI can be called directly from Chrome or through an optional local Node helper.
+Hermes is a Manifest V3 Chrome extension. It extracts article text locally, keeps the webpage as the reading surface, and uses OpenAI for all narration. OpenAI can be called directly from Chrome or through an optional local Node helper.
 
 ```mermaid
 flowchart LR
@@ -24,7 +24,7 @@ flowchart LR
 | `extension/extractor.js` | Article scoring, noise filtering, DOM word ranges, and chunking |
 | `extension/content.js` | Page session, keyboard controls, word seeking, and CSS highlights |
 | `extension/ui.js` | Draggable, dockable, collapsible player isolated in a Shadow DOM |
-| `extension/background.js` | Trusted storage access, settings, session coordination, native speech, and audio lifecycle |
+| `extension/background.js` | Trusted storage access, settings, session coordination and API audio lifecycle |
 | `extension/session-data.js` | Session-only credentials, voice guidance, and audio encryption key; migration of prior persistent secrets |
 | `extension/speech-client.js` | Direct/helper routing, speech requests, and optional transcription |
 | `extension/offscreen.js` | Audio requests, buffering, playback, cancellation, and timing updates |
@@ -51,7 +51,7 @@ This is a heuristic HTML reader. It does not parse PDFs, images, cross-origin fr
 
 The first chunk targets about 25 words; subsequent chunks target about 85. Sentence and paragraph boundaries guide splitting within word and character limits. No language model summarizes or rewrites the source.
 
-Browser mode uses `chrome.tts`, requires an installed non-remote voice, and consumes native word events when provided. Changing speed or seeking restarts speech from the current word. Its remaining-time estimate uses word count and the selected rate.
+Version 0.5.0 removes the browser speech path and the `tts` permission. New installs default to direct OpenAI with Alloy and `gpt-4o-mini-tts`; older browser-voice preferences normalize to the same model. Existing explicit local-helper connections remain supported. Missing connection or consent shows a setup prompt before creating an audio document, with no native fallback.
 
 OpenAI mode reuses saved WAV chunks when available, otherwise requesting speech at native speed through `speech-client.js`. `gpt-4o-mini-tts` receives verbatim-reading instructions plus up to 1,000 characters of user pronunciation/delivery guidance. The legacy `tts-1` and `tts-1-hd` paths omit those instructions. Playback uses `HTMLAudioElement.playbackRate` with pitch preservation. Speed changes never trigger an API request and are excluded from the saved-audio key. This is chunked playback, not token-level audio streaming; generation and chunk transitions can still cause waits. See the [OpenAI speech guide](https://developers.openai.com/api/docs/guides/text-to-speech).
 
@@ -81,7 +81,7 @@ The optional helper caches up to **16 MiB** of audio, keyed by model, voice, tex
 
 ## Credentials and request boundaries
 
-**Consent:** the Options disclosure explains that OpenAI receives narration text, limited prefetched text, applicable voice guidance, and generated audio when improved timing is enabled. An explicit checkbox records the user's agreement. The speech client checks consent at the request boundary before speech or alignment requests in both direct and local-helper modes. Installed native speech does not require OpenAI consent. Trusted-event guards reject webpage-generated synthetic actions that could trigger paid reading controls.
+**Consent:** the Options disclosure explains that OpenAI receives narration text, limited prefetched text, applicable voice guidance, and generated audio when improved timing is enabled. An explicit checkbox records the user's agreement. The speech client checks consent at the request boundary before speech or alignment requests in both direct and local-helper modes. Trusted-event guards reject webpage-generated synthetic actions that could trigger paid reading controls.
 
 **Direct mode:** a deliberate Save connection action requests optional access to `https://api.openai.com/*`. The API key and custom voice guidance use `chrome.storage.session`, not persistent local storage or Sync. Quitting Chrome ends their lifetime. Storage access is restricted to trusted extension contexts; content scripts receive settings and status rather than API credentials. The offscreen document obtains connection details through a sender-checked internal message. Importing an environment file reads it locally without uploading the file. Forgetting the key also removes the optional permission. A ready configuration is not proof of a valid key; OpenAI validates it on a real request.
 

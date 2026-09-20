@@ -106,6 +106,7 @@
         .utility { display: flex; gap: 12px; justify-content: space-between; margin-top: 12px; padding-top: 8px; border-top: 1px solid #ffffff15; }
         .utility button { background: transparent; display: flex; gap: 8px; align-items: center; padding: 8px 0; min-height: 44px; color: #c2c2c5; font-size: 14px; }
         .utility button svg { width: 17px; height: 17px; }
+        .connect { display: block; margin-top: 10px; background: #ebe4d4; color: #23221f; border-radius: 9px; padding: 9px 13px; font-size: 15px; font-weight: 600; }
         .notice { position: fixed; width: min(400px, calc(100vw - 24px)); background: #302b24; border: 1px solid #62523b; border-radius: 14px; padding: 12px 15px; color: #f0e0c4; font-size: 15px; overflow-wrap: anywhere; }
         .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
         @media (max-width: 660px) { .primary-label { display: none; } .primary { width: 46px; padding: 0; } .bar { gap: 2px; padding: 9px; } .track-heading { flex-direction: column; gap: 0; } .title { max-width: 100%; width: 100%; } .progress-wrap { height: 18px; } }
@@ -113,7 +114,7 @@
         @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; } }
       </style>
       <section class="reader" aria-label="Hermes article reader">
-        <div class="notice" role="alert" hidden></div>
+        <div class="notice" role="alert" hidden><span class="notice-message"></span><button type="button" class="connect" hidden>Connect OpenAI</button></div>
         <div class="drawer" id="reader-settings" hidden>
           <div class="drawer-top"><h2 class="drawer-title">Hermes</h2><button type="button" class="icon-button drawer-dismiss" aria-label="Close settings">${icon('close')}</button></div>
           <div class="speed-heading"><label class="field-label" for="reader-speed">Reading speed</label><output class="speed-output" for="reader-speed">1×</output></div>
@@ -128,7 +129,6 @@
                 <option value="gpt-4o-mini-tts">OpenAI · expressive</option>
                 <option value="tts-1">OpenAI · classic</option>
                 <option value="tts-1-hd">OpenAI · classic HD</option>
-                <option value="local">Browser voice · instant</option>
               </select>
             </label>
             <label class="follow field-label" for="reader-sync"><span>Tighter word sync</span><input id="reader-sync" type="checkbox" aria-describedby="reader-sync-help"></label>
@@ -175,7 +175,7 @@
       speedToggle: get('.speed-toggle'), settingsToggle: get('.settings-toggle'),
       voice: get('#reader-voice'), voiceField: get('.voice-field'), model: get('#reader-model'),
       follow: get('#reader-follow'), sync: get('#reader-sync'), syncHelp: get('#reader-sync-help'), instructions: get('#reader-instructions'), instructionsHelp: get('#reader-instructions-help'), promptCount: get('.prompt-count'),
-      notice: get('.notice'), live: get('.live-status'), previous: get('.previous'), next: get('.next'), stop: get('.stop'), hint: get('.timing-hint'),
+      notice: get('.notice'), noticeMessage: get('.notice-message'), connect: get('.connect'), live: get('.live-status'), previous: get('.previous'), next: get('.next'), stop: get('.stop'), hint: get('.timing-hint'),
       pasteToggle: get('.paste-toggle'), paste: get('#reader-paste'), text: get('#reader-text'), pasteAction: get('.paste-action'),
     };
     let state = {
@@ -269,16 +269,13 @@
       }
       elements.voice.value = state.voice;
       if (!elements.voice.value) elements.voice.value = 'alloy';
-      const local = state.model === 'local';
-      elements.voiceField.hidden = local;
-      elements.hint.textContent = local || state.timingSource === 'native'
-        ? 'Your browser’s voice · Double-click a word to jump there.'
-        : state.timingSource === 'aligned' ? 'AI voice · Words matched to audio. Double-click a word to jump there.'
+      elements.voiceField.hidden = false;
+      elements.hint.textContent = state.timingSource === 'aligned' ? 'AI voice · Words matched to audio. Double-click a word to jump there.'
           : state.syncMode === 'precise' ? 'AI voice · Word sync improves when audio is matched. Double-click a word to jump there.'
             : 'AI voice · Estimated word timing. Double-click a word to jump there.';
       elements.sync.checked = state.syncMode !== 'estimated';
-      elements.sync.disabled = local;
-      elements.syncHelp.textContent = local ? 'Browser voices provide their own word timing.' : 'Adds a small transcription request to match words to the audio.';
+      elements.sync.disabled = false;
+      elements.syncHelp.textContent = 'Adds a small transcription request to match words to the audio.';
       elements.instructions.disabled = state.model !== 'gpt-4o-mini-tts';
       // Do not overwrite an in-progress edit when playback publishes new words.
       if (root.activeElement !== elements.instructions) elements.instructions.value = String(state.instructions || '').slice(0, 1000);
@@ -290,7 +287,7 @@
 
     function render() {
       state.speed = clamp(number(state.speed, 1), 0.75, 4);
-      state.model = String(state.model || 'gpt-4o-mini-tts');
+      state.model = ['gpt-4o-mini-tts','tts-1','tts-1-hd'].includes(state.model) ? state.model : 'gpt-4o-mini-tts';
       const playing = state.status === 'playing', loading = state.status === 'loading';
       const active = playing || loading || state.status === 'paused';
       const label = playing || loading ? 'Pause reading' : state.status === 'paused' ? 'Resume reading' : state.status === 'ended' ? 'Read again' : 'Start reading';
@@ -323,13 +320,14 @@
       elements.previous.disabled = !state.totalWords;
       elements.next.disabled = !state.totalWords;
       elements.stop.disabled = !active && state.status !== 'error';
-      const connectionHint = state.connected === false && state.model !== 'local'
-        ? 'OpenAI isn’t connected. Choose Browser voice in settings to listen immediately.' : '';
+      const connectionHint = state.connected === false
+        ? 'OpenAI isn’t connected. Add your API key in Hermes Options to start reading.' : '';
       const error = state.error ? String(state.error.message || state.error) : '';
       const notice = [error, connectionHint].filter(Boolean).join(' ');
-      const noticeChanged = elements.notice.textContent !== notice;
+      const noticeChanged = elements.noticeMessage.textContent !== notice;
       elements.notice.hidden = !notice;
-      elements.notice.textContent = notice;
+      elements.noticeMessage.textContent = notice;
+      elements.connect.hidden = state.connected !== false;
       if (noticeChanged && host.isConnected) panelPosition();
       const announcement = error || (loading ? 'Preparing audio' : playing ? 'Reading' : state.status === 'paused' ? 'Reading paused' : state.status === 'ended' ? 'Finished reading' : state.status === 'stopped' ? 'Reading stopped' : 'Ready to read');
       if (announcement !== lastAnnouncement) {
@@ -401,6 +399,7 @@
       window.addEventListener('pointercancel', endDrag);
     }
 
+    listen(elements.connect, 'click', () => emit('setup'));
     listen(elements.primary, 'click', () => emit(state.status === 'playing' || state.status === 'loading' ? 'pause' : 'play'));
     listen(elements.previous, 'click', () => emit('previous'));
     listen(elements.next, 'click', () => emit('next'));

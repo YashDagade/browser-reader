@@ -10,11 +10,11 @@
       ]);
       const local = await chrome.storage.local.get(['hermesConnection', 'settings']);
       const session = await chrome.storage.session.get(['hermesApiKey', 'hermesInstructions']);
-      const connection = local.hermesConnection || {mode: 'local'};
+      const connection = local.hermesConnection || {mode: 'direct'};
       // Migrate the personal prototype without ever rendering its saved key.
       if (connection.apiKey) {
         if (!session.hermesApiKey) await chrome.storage.session.set({hermesApiKey: connection.apiKey});
-        await chrome.storage.local.set({hermesConnection: {mode: connection.mode || 'local', consent: connection.consent === true}});
+        await chrome.storage.local.set({hermesConnection: {mode: connection.mode || 'direct', consent: connection.consent === true}});
       }
       if (typeof local.settings?.instructions === 'string') {
         if (session.hermesInstructions === undefined) await chrome.storage.session.set({hermesInstructions: local.settings.instructions});
@@ -29,11 +29,11 @@
     const [{hermesConnection = {}}, {hermesApiKey = ''}] = await Promise.all([
       chrome.storage.local.get('hermesConnection'), chrome.storage.session.get('hermesApiKey'),
     ]);
-    return {mode: hermesConnection.mode === 'direct' ? 'direct' : 'local', apiKey: hermesApiKey, consent: hermesConnection.consent === true};
+    return {mode: hermesConnection.mode === 'local' ? 'local' : 'direct', apiKey: hermesApiKey, consent: hermesConnection.consent === true};
   }
   async function saveConnection(input) {
     const previous = await connection();
-    const mode = input.mode === 'direct' ? 'direct' : 'local';
+    const mode = input.mode === 'local' ? 'local' : 'direct';
     const candidate = typeof input.apiKey === 'string' && input.apiKey.trim() ? input.apiKey.trim() : previous.apiKey;
     if (input.consent !== true) throw Error('Review and accept the OpenAI disclosure before saving.');
     if (mode === 'direct' && !/^sk-[A-Za-z0-9_-]{16,}$/.test(candidate)) throw Error('Import or paste a valid OpenAI API key first.');
@@ -52,7 +52,7 @@
     const [{settings = {}}, {hermesInstructions = ''}] = await Promise.all([
       chrome.storage.local.get('settings'), chrome.storage.session.get('hermesInstructions'),
     ]);
-    return {...settings, instructions: hermesInstructions};
+    return {...settings, model: ['gpt-4o-mini-tts','tts-1','tts-1-hd'].includes(settings.model) ? settings.model : 'gpt-4o-mini-tts', instructions: hermesInstructions};
   }
   async function savePreferences(value) {
     await initialize();

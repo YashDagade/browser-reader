@@ -123,3 +123,20 @@ test('helper consent can be withdrawn even when Chrome has no API key',async()=>
  doc.querySelector('#forget').click();await tick();
  assert.equal(stored.hermesConnection.consent,false);assert.equal(doc.querySelector('#cloud-consent').checked,false);dom.window.close();
 });
+
+test('fresh Options show only API voices, direct setup, and a missing-key prompt',async()=>{
+ const {dom}=await setupOptions({});const doc=dom.window.document;
+ assert.equal(doc.querySelector('#connection-mode').value,'direct');
+ assert.equal(doc.querySelector('#model').value,'gpt-4o-mini-tts');
+ assert.ok(!Array.from(doc.querySelector('#model').options,o=>o.value).includes('local'));
+ assert.match(doc.querySelector('#connection').textContent,/key|Connect OpenAI/);
+ assert.doesNotMatch(doc.body.textContent,/on-device|browser voice/i);dom.window.close();
+});
+
+test('direct mode with no API key cannot fall back to another voice or make a request',async()=>{
+ let requests=0;
+ const {api}=client({connection:{mode:'direct',apiKey:''},fetchImpl:async()=>{requests++;throw Error('Unexpected request');}});
+ assert.equal((await api.health()).configured,false);
+ await assert.rejects(api.speech({text:'Hello',model:'gpt-4o-mini-tts'}),/Save an OpenAI API key/);
+ assert.equal(requests,0);
+});

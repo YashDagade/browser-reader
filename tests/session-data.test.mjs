@@ -47,3 +47,15 @@ test('concurrent cache clients share one random session key',async()=>{
  assert.deepEqual(a,b);assert.equal(a.key.length,32);assert.ok(a.key.every(n=>Number.isInteger(n)&&n>=0&&n<=255));
  assert.equal(Object.keys(app.local).length,0);
 });
+
+test('new installs default to direct OpenAI while legacy voice settings migrate without granting consent',async()=>{
+ const fresh=harness();
+ assert.equal((await fresh.api.connection()).mode,'direct');
+ assert.equal((await fresh.api.connection()).consent,false);
+ assert.equal((await fresh.api.preferences()).model,'gpt-4o-mini-tts');
+ const legacy=harness({hermesConnection:{mode:'local'},settings:{model:'local',voice:'nova',speed:4}});
+ const prefs=await legacy.api.preferences();
+ assert.equal(prefs.model,'gpt-4o-mini-tts');assert.equal(prefs.voice,'nova');assert.equal(prefs.speed,4);
+ assert.equal((await legacy.api.connection()).mode,'local');
+ assert.equal((await legacy.api.connection()).consent,false);
+});

@@ -1,8 +1,8 @@
 # Hermes privacy policy
 
-Updated September 20, 2026. Applies to Hermes 0.4.0 and later unless replaced by a newer policy.
+Updated September 20, 2026. Applies to Hermes 0.5.0 and later unless replaced by a newer policy.
 
-Hermes reads webpage articles, selected passages, and pasted text aloud. It offers installed on-device voices and optional OpenAI voices using your own API key. The extension sends no reading content or credentials to its developer. There is no Hermes account, developer-operated data service, analytics, advertising, or sale of user data.
+Hermes reads webpage articles, selected passages, and pasted text aloud. All narration uses OpenAI voices with your own API key. There is no browser or on-device voice fallback. The extension sends no reading content or credentials to its developer. There is no Hermes account, developer-operated data service, analytics, advertising, or sale of user data.
 
 ## What Hermes handles
 
@@ -15,17 +15,17 @@ Hermes reads webpage articles, selected passages, and pasted text aloud. It offe
 | Generated audio and timing data | Used for playback, highlighting, and repeat listening. Improved timing sends generated audio to OpenAI transcription to obtain word timestamps. Local cached audio and numeric timings are encrypted as described below. |
 | Nonsecret preferences | Voice/model choice, speed, layout, and other reading preferences are saved locally in your Chrome profile. Hermes does not use Chrome Sync. |
 
-Text you choose to read can contain personal communications, names or contact details, health or financial information, locations, or other sensitive content. Hermes does not separately seek out those categories, but it processes them as part of the text if you ask it to read that material. Choose the on-device voice if you do not want narration content sent to OpenAI.
+Text you choose to read can contain personal communications, names or contact details, health or financial information, locations, or other sensitive content. Hermes does not separately seek out those categories, but it processes them as part of the text if you ask it to read that material. Do not start narration for content you do not want sent to OpenAI. Local extraction and reader controls remain available before connecting.
 
 ## OpenAI sharing and your choice
 
-Before OpenAI narration is enabled, Hermes displays an in-product disclosure and requires you to check an explicit consent box. The request path checks that consent before making speech or word-alignment requests, including requests routed through the optional local helper. The browser voice uses an installed non-remote voice and does not contact OpenAI.
+Before OpenAI narration is enabled, Hermes displays an in-product disclosure and requires you to check an explicit consent box. The request path checks that consent before making speech or word-alignment requests, including requests routed through the optional local helper. No narration begins without an API connection and affirmative consent.
 
 With consent, the selected text passages and applicable voice instructions are sent to OpenAI's speech API over HTTPS. A few upcoming passages may be sent ahead to reduce waiting. If **Improve timing** is enabled, generated audio is sent to OpenAI's transcription API. Your API key authenticates those requests, and usage is charged to your OpenAI API project. OpenAI also receives ordinary connection and request metadata needed to serve the request. Its handling and retention are governed by your OpenAI agreement and account settings; see [OpenAI's API data controls](https://developers.openai.com/api/docs/guides/your-data).
 
 Direct mode connects from Chrome to fixed OpenAI HTTPS endpoints. Local-helper mode first sends the same request to a service on `127.0.0.1` on your computer, which then contacts OpenAI over HTTPS. No content passes through a Hermes developer server. The helper is optional; direct mode requires no Node installation or backend.
 
-You can choose the on-device voice, disable improved timing, or use **Disconnect OpenAI** in Options to remove the direct-mode key and reset consent for either connection mode. Withdrawing consent blocks new OpenAI requests; it does not recall data already sent to OpenAI.
+You can disable improved timing or use **Disconnect OpenAI** in Options to remove the direct-mode key and reset consent for either connection mode. Withdrawing consent blocks new OpenAI requests; it does not recall data already sent to OpenAI.
 
 ## Storage and retention
 

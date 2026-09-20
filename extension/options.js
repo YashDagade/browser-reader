@@ -21,7 +21,7 @@ function connectionFields() {
 }
 async function initialize() {
   const [{settings = {}}, {connection}] = await Promise.all([background('preferences'), background('connection-manage', {action: 'get'})]);
-  model.value = settings.model || 'local'; voice.value = settings.voice || 'alloy';
+  model.value = ['gpt-4o-mini-tts','tts-1','tts-1-hd'].includes(settings.model) ? settings.model : 'gpt-4o-mini-tts'; voice.value = settings.voice || 'alloy';
   $('#instructions').value = settings.instructions || ''; $('#sync-mode').value = settings.syncMode || 'precise';
   mode.value = connection.mode; $('#forget').hidden = !connection.hasKey && !connection.consent;
   $('#cloud-consent').checked = connection.consent === true;
@@ -79,11 +79,11 @@ $('#forget').addEventListener('click', async () => {
 async function check() {
   const state = await HermesSpeech.health();
   const {connection} = await background('connection-manage', {action: 'get'});
-  $('#connection').textContent = state.configured ? state.mode === 'direct' ? 'OpenAI direct connection is ready' : 'OpenAI local connection is ready' : state.running && state.mode === 'direct' ? 'Add your OpenAI key' : state.running ? 'Local helper ready · API key needed' : 'On-device reading is ready';
-  $('#detail').textContent = state.configured ? state.mode === 'direct' ? 'Hermes is configured to call OpenAI from Chrome. Your key is checked when you first play audio.' : 'Open an article and choose an OpenAI voice in the player.' : state.mode === 'direct' ? 'Import or paste your own API key below, then save the connection.' : 'The on-device voice works immediately. Select a connection below to enable OpenAI voices.';
+  $('#connection').textContent = state.configured ? state.mode === 'direct' ? 'OpenAI direct connection is ready' : 'OpenAI local connection is ready' : state.running && state.mode === 'direct' ? 'Add your OpenAI key' : state.running ? 'Local helper ready · API key needed' : 'Connect OpenAI to start reading';
+  $('#detail').textContent = state.configured ? state.mode === 'direct' ? 'Hermes is configured to call OpenAI from Chrome. Your key is checked when you first play audio.' : 'Open an article and choose an OpenAI voice in the player.' : state.mode === 'direct' ? 'Import or paste your own API key below, then save the connection.' : 'Connect directly with your API key, or start your configured local helper.';
   if (state.configured && !connection.consent) {
     $('#connection').textContent = 'Review OpenAI data sharing';
-    $('#detail').textContent = 'Review the disclosure below, check the consent box, and save before using an OpenAI voice. On-device reading remains available.';
+    $('#detail').textContent = 'Review the disclosure below, check the consent box, and save before using an OpenAI voice.';
   }
   if (new URLSearchParams(location.search).has('restricted')) $('#detail').textContent += ' This Chrome page cannot run the reader. Try a regular article webpage.';
 }

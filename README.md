@@ -2,7 +2,7 @@
 
 **Your reading. At your pace.** A small Chrome extension for listening to articles, essays, and technical writing without leaving the page.
 
-Click **Start reading**, follow the highlighted words, and change speed from **0.75× to 4×**. Use an installed browser voice or connect OpenAI directly from Chrome. No Node, backend, or build step is needed for either option.
+Click **Start reading**, follow the highlighted words, and change speed from **0.75× to 4×**. Connect your own OpenAI API key directly from Chrome. All narration uses OpenAI; there is no browser or system voice fallback. No Node, hosted backend, or build step is needed.
 
 - A readable floating player with play, pause, stop, passage skipping, and a position slider.
 - Drag it anywhere, drop it near an edge to dock, or collapse it to a small movable button while listening.
@@ -13,13 +13,14 @@ Click **Start reading**, follow the highlighted words, and change speed from **0
 
 ## Install and listen
 
-Requires **desktop Chrome 116+**. Version **0.4.0 was submitted to the Chrome Web Store on September 20, 2026**, with automatic publication enabled after approval. It is awaiting review and is not yet publicly available there. Install the unpacked extension below. Chrome extensions do not run on iPhone or iPad, even in desktop mode; a Safari version would require a separate port. See [Google's device compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en).
+Requires **desktop Chrome 116+**. Version **0.5.0 removes browser voices and requires OpenAI**. The previous 0.4.0 package was submitted for review; the API-only update is being prepared for submission. Install the unpacked extension below. Chrome extensions do not run on iPhone or iPad, even in desktop mode; a Safari version would require a separate port. See [Google's device compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en).
 
 1. [Download `hermes-extension.zip`](https://github.com/YashDagade/browser-reader/releases/latest/download/hermes-extension.zip) and extract it to a folder you will keep.
 2. Open `chrome://extensions` and enable **Developer mode**.
 3. Click **Load unpacked** and select the extracted **`extension`** folder.
 4. Pin **Hermes · Article Reader** from Chrome's extensions menu.
-5. Open an article, click Hermes, then **Start reading**. The default browser voice needs no API key.
+5. Open Hermes **Options** and connect your OpenAI API key using the steps below.
+6. Open an article, click Hermes, then **Start reading**. The default voice is **Alloy** with **OpenAI expressive**.
 
 You can also [clone the repository](https://github.com/YashDagade/browser-reader) and load its `extension` folder. Keep the installed folder in place. After updating its files, click **Reload** at `chrome://extensions` and reload the article tab.
 
@@ -35,7 +36,7 @@ You can also [clone the repository](https://github.com/YashDagade/browser-reader
 
 For file-based setup, create a file named `.env.local` on your computer with one line: `OPENAI_API_KEY=your_own_key_here` (replace the placeholder locally). If you cloned the repository, copy `.env.example` to `.env.local` first. Import that private file in Options; do not put the key in extension source files.
 
-OpenAI speech is AI generated and billed to your API project. Voice instructions apply only to `gpt-4o-mini-tts`; older models and browser voices do not support them. Hermes asks for verbatim reading and careful pronunciation of jargon. See [OpenAI's speech guide](https://developers.openai.com/api/docs/guides/text-to-speech).
+OpenAI speech is AI generated and billed to your API project. Voice instructions apply only to `gpt-4o-mini-tts`; older models do not support them. Hermes asks for verbatim reading and careful pronunciation of jargon. See [OpenAI's speech guide](https://developers.openai.com/api/docs/guides/text-to-speech).
 
 ### Optional local helper
 
@@ -67,9 +68,9 @@ Select a passage before opening Hermes to read just that selection. **Read your 
 
 Dropping near the left or right edge makes the toolbar vertical; top and bottom keep it horizontal. Auto-scroll moves before the spoken word reaches the bottom and briefly yields to manual scrolling. Same-page links keep the reading session alive. If its background session is lost, the controls reconnect to the current article at the saved word.
 
-**Word timing:** **Improve timing** matches background `whisper-1` transcription timestamps to the source. Playback starts without waiting; estimates remain while alignment is pending or unavailable. This adds API usage and is not perfectly exact. Choose **Lightweight** to disable it. Browser voices use native word events when available. See [OpenAI's transcription guide](https://developers.openai.com/api/docs/guides/speech-to-text).
+**Word timing:** **Improve timing** matches background `whisper-1` transcription timestamps to the source. Playback starts without waiting; estimates remain while alignment is pending or unavailable. This adds API usage and is not perfectly exact. Choose **Lightweight** to disable it. See [OpenAI's transcription guide](https://developers.openai.com/api/docs/guides/speech-to-text).
 
-**Time remaining** appears as minutes:seconds. Buffered audio uses measured durations; passages not yet generated and browser speech use estimates. Playback speed is reflected in the countdown.
+**Time remaining** appears as minutes:seconds. Buffered audio uses measured durations; passages not yet generated use estimates. Playback speed is reflected in the countdown.
 
 ## Privacy and limits
 
@@ -83,7 +84,13 @@ Environment and common credential files are Git-ignored; no key is bundled in th
 
 OpenAI needs an initial buffer; fast playback and chunk transitions can cause gaps. Unusual layouts may require selecting or pasting text. Chrome internal pages, the Web Store, and the built-in PDF viewer are unsupported. Hermes does not bypass paywalls or reveal collapsed content.
 
-If speech fails, check your connection settings or installed system voices. If extraction misses, close Hermes and reopen it with the desired passage selected.
+If speech fails, check your OpenAI connection, key, quota, and data-sharing consent in Options. Hermes never falls back to a system voice. If extraction misses, close Hermes and reopen it with the desired passage selected.
+
+## iPhone and iPad
+
+The Chrome package cannot run in Chrome on iOS or iPadOS. The path to the same in-page controls and highlighting is a separate **Safari web extension inside an iOS app**, distributed through TestFlight or the App Store. A companion **Share to Hermes** action could accept articles or selected text from mobile Chrome and play them inside the Hermes app. Neither mobile version is included in this release.
+
+The mobile port needs a replacement for Chrome’s offscreen audio document and device testing for background playback, scrolling, and word timing. It can call OpenAI directly with a user-owned key stored in iOS Keychain; no AWS or Node server is necessary. See [the mobile implementation plan](docs/mobile.md) and [Apple’s Safari extension guidance](https://developer.apple.com/safari/extensions/).
 
 ## Development
 
@@ -103,10 +110,10 @@ Licensed under [MIT](LICENSE).
 
 ![Hermes 0.4.0 reading an original essay, with live word highlighting](docs/store/screenshot-reading.png)
 
-Current interface, captured in Chrome with on-device speech.
+Earlier 0.4.0 interface screenshot. Version 0.5.0 uses only OpenAI narration.
 
 [![Hermes: a movable Chrome reader with highlighting, voice controls, and adjustable speed](docs/demo-poster.png)](docs/hermes-demo.mp4)
 
 [Watch the v0.2.0 walkthrough (MP4)](docs/hermes-demo.mp4). This silent, captioned demo shows an earlier interface and setup flow. Current versions use double-click word seeking, direct speed cycling, edge docking, explicit OpenAI consent, and session-only credentials.
 
-Hermes keeps the article in place and adds a player you can move out of the way. Text extraction runs locally, short audio chunks keep playback responsive, and speed changes happen in the player. Use OpenAI for expressive voices or an installed browser voice for local speech. To try the sample article, run `npm run demo` from the full repository and open the local address printed in the terminal.
+Hermes keeps the article in place and adds a player you can move out of the way. Text extraction runs locally, short audio chunks keep playback responsive, and speed changes happen in the player. OpenAI supplies all narration; local extraction does not rewrite the article. To try the sample article, run `npm run demo` from the full repository and open the local address printed in the terminal.

@@ -1,10 +1,10 @@
 # Chrome Web Store submission
 
-**Submitted version: 0.4.0. Status on September 20, 2026: submitted for review; not yet approved or publicly available.** The dashboard confirmed "Your extension was submitted for review" after contact-email verification. Automatic publication after approval is enabled, with public distribution in all available regions. The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. This file records listing text, disclosure rationale, and reviewer instructions; submission is not evidence of store acceptance. The publisher's account address is intentionally absent from public source.
+**Target version: 0.5.0. Status: prepared, not yet submitted.** This API-only update replaces the 0.4.0 package previously submitted on September 20, 2026. The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. Final submission and approval must be verified in the dashboard. The publisher's account address is intentionally absent from public source.
 
 ## Listing fields
 
-| Field | Submitted value |
+| Field | Value |
 | --- | --- |
 | Name | Hermes · Article Reader |
 | Summary | Your articles, at your pace. Fast speech, word highlighting, and a quiet floating player. |
@@ -13,7 +13,7 @@
 | Website | [Project homepage](https://github.com/YashDagade/browser-reader) |
 | Support | [Issue tracker](https://github.com/YashDagade/browser-reader/issues) |
 | Privacy policy | [Public policy URL](https://github.com/YashDagade/browser-reader/blob/main/PRIVACY.md) |
-| Pricing | No extension purchase or Hermes subscription. Optional OpenAI usage is billed to the user's own API project. |
+| Pricing | No extension purchase or Hermes subscription. OpenAI usage is billed to the user's own API project. |
 
 The privacy-policy URL must be publicly readable after the policy is pushed. Do not provide a developer API key, private email address, or private account information in the public listing or review instructions.
 
@@ -21,7 +21,7 @@ The privacy-policy URL must be publicly readable after the policy is pushed. Do 
 
 Hermes reads articles, essays, selected passages, and pasted text aloud without taking you away from the webpage.
 
-Start with an installed on-device voice, or connect your own OpenAI API key for expressive AI narration. Direct OpenAI mode works from Chrome with no Node installation or hosted backend. OpenAI usage is billed to your own API project.
+Connect your own OpenAI API key for expressive AI narration. All voices use OpenAI, and an API connection is required. There is no system-voice fallback. Direct OpenAI mode works from Chrome with no Node installation or hosted backend. OpenAI usage is billed to your own API project.
 
 Reading controls:
 
@@ -35,7 +35,7 @@ Hermes extracts text locally and skips common navigation, advertisements, signup
 
 Privacy and setup:
 
-- On-device voices send no text to OpenAI.
+- No speech request is made until you connect your API key and consent.
 - OpenAI narration requires an explicit data-sharing choice. Narration text, a few upcoming passages, and applicable voice guidance go to OpenAI. Improved timing also sends generated audio.
 - The direct-mode key and voice instructions last for the current browser session. They are not synced or persistently saved by Hermes.
 - Audio is cached locally with encryption for reuse within the same browser session. Clear it from Options.
@@ -69,26 +69,25 @@ Use the dashboard's actual field labels. These declarations describe data handle
 | `storage` | Store nonsecret preferences, temporary session state and credentials, and the bounded encrypted audio cache. No Chrome Sync is used. |
 | `offscreen` | Play generated audio independently of the page UI and manage its bounded audio resources. The document is released on stop/close or idle cleanup. |
 | `contextMenus` | Provide the user-invoked “Read with Hermes” page/selection action. |
-| `tts` | Use installed non-remote system voices without an OpenAI key or network narration request. |
 | `alarms` | Release an inactive audio document after three idle minutes; not used to poll browsing activity. |
-| `http://127.0.0.1:43123/*` | Connect only to the optional same-computer speech helper. The helper keeps a user's private API key outside Chrome; it is not required for direct mode or on-device speech. |
+| `http://127.0.0.1:43123/*` | Connect only to the optional same-computer speech helper. The helper keeps a user's private API key outside Chrome; it is not required for direct mode. |
 | Optional `https://api.openai.com/*` | Request OpenAI speech/transcription only after the user chooses direct mode, consents, and grants the permission. |
 
 **Remote code answer: No.** Runtime JavaScript, HTML, and CSS are bundled. The OpenAI responses are audio or transcription data, not executable code. The optional local helper runs separately and does not supply executable extension code. This distinction follows the store's [remote-code declaration guidance](https://developer.chrome.com/docs/webstore/cws-dashboard-privacy#declare_any_remote_code).
 
 ## Reviewer instructions
 
-No Hermes login or developer-supplied API credential is required to test the main reading flow.
+Hermes has no login or subscription. Audio playback requires a reviewer-owned OpenAI API key with speech access and available API credit; no developer credential is supplied.
 
-1. Install the uploaded extension in desktop Chrome. Ensure an on-device text-to-speech voice is installed and system audio is enabled.
-2. Open a public article with visible prose, pin Hermes, click its toolbar icon, then **Start reading**. The default on-device voice should narrate without any OpenAI request.
-3. Test play/pause/stop, passage skipping, highlighting, and double-click seeking on a non-link word. Browser word-event support varies by voice.
-4. Cycle the toolbar speed button and use the 0.75×–4× slider in settings. Drag near each edge to test docking, then collapse/expand the reader.
+1. Install the extension in desktop Chrome and open a public article. Click Hermes. Before API setup, a **Connect OpenAI** prompt should appear; it opens Options. No system voice or speech request should start.
+2. In Options, select **Direct from Chrome**, supply a reviewer-owned OpenAI API key, read the disclosure, check consent, and click **Save connection**. Grant the optional OpenAI host permission. The key is held only in browser-session memory.
+3. Return to the article and click **Start reading**. The default is Alloy with OpenAI expressive (`gpt-4o-mini-tts`). Test play/pause/stop, passage skipping, highlighting, and double-click seeking on a non-link word.
+4. Cycle the toolbar speed button and use the 0.75×–4× slider. Speed-only changes must reuse audio without new speech requests. Drag near each edge to dock, then collapse and expand the reader.
 5. Close Hermes, select a passage, and reopen it. Test pasted text through **Read your own text**. Pasted text has no page-word highlights.
-6. For optional OpenAI testing, open Options, select direct mode, supply a reviewer-owned API key, read the disclosure, check consent, and save. Grant the optional API permission. No developer key is available or necessary for the on-device tests.
-7. Choose an OpenAI voice and start reading. No speech/alignment request should occur without consent. Improved timing adds a transcription request; lightweight timing does not. Speed-only changes do not generate new API requests. **Disconnect OpenAI** removes the direct key and permission and resets consent, including when local-helper mode was selected.
-8. Close and reopen the reader during the same Chrome session to exercise encrypted audio reuse. Use **Clear saved audio** in Options to remove cached entries. Quit and restart Chrome to verify the direct key and custom instructions must be supplied again and previous audio cannot be decrypted with the new session key.
-9. The local helper is an optional alternative: Node 22+, the repository's helper, and a reviewer-owned key in a private environment file. It is not needed to review the packaged extension's default or direct modes.
+6. Test another OpenAI voice and optional voice instructions. Improved timing adds transcription requests; lightweight timing does not. No speech or alignment request may occur without consent.
+7. **Disconnect OpenAI** removes the direct key and permission and resets consent. Subsequent playback shows setup guidance and does not fall back to browser speech. Invalid API credentials produce an error, not a different voice.
+8. Close and reopen the reader during the same Chrome session to exercise encrypted audio reuse. Clear the cache in Options. Quit and restart Chrome to verify the key and custom guidance must be supplied again and previous cached audio cannot be decrypted.
+9. The local Node helper is an optional alternative API transport and also requires a user-owned OpenAI key. It is not required for direct mode.
 
 A page reload or replacement can require reopening the reader. Same-document links should preserve the session. Chrome-restricted pages and PDFs are outside scope. The repository's linked v0.2.0 demo shows an earlier interface; use current screenshots and this release's behavior for review.
 
@@ -102,10 +101,10 @@ Run `npm run package` from the repository root to produce both archives. Upload 
 | Small promotional tile, 440 × 280 | [promo-440x280.png](store/promo-440x280.png) |
 | Current screenshot, 1280 × 800 | [screenshot-reading.png](store/screenshot-reading.png) |
 
-The screenshot shows v0.4.0 running in desktop Chrome with actual on-device narration and word highlighting. Its original sample essay is included under MIT; it contains no private page content or credentials.
+The screenshot shows the earlier v0.4.0 player and word highlighting; v0.5.0 uses only OpenAI narration. Its original sample essay is included under MIT; it contains no private page content or credentials.
 
 ## Submission handoff
 
-Use the store ZIP with `manifest.json` at its root, not the general unpacked-install ZIP that contains an `extension` folder. Confirm its version is 0.4.0 and it contains only extension assets; no environment files, API keys, local helper, test credentials, or private material. Complete the store's listing, privacy, distribution, and reviewer fields in the publisher dashboard, then verify the resulting status there. Uploading a ZIP alone is not submission or approval.
+Use the store ZIP with `manifest.json` at its root, not the general unpacked-install ZIP that contains an `extension` folder. Confirm its version is 0.5.0 and it contains only extension assets; no environment files, API keys, local helper, test credentials, or private material. Complete the store's listing, privacy, distribution, and reviewer fields in the publisher dashboard, then verify the resulting status there. Uploading a ZIP alone is not submission or approval.
 
 This is a desktop Chrome release. Google's [compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en) says mobile devices cannot install Chrome extensions even in desktop mode. iPhone/iPad support would require a separate app or Safari extension port and its own distribution process.

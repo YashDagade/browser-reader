@@ -7,7 +7,7 @@
   async function config() {
     if (!globalThis.HermesSession) {
       const result = await chrome.runtime.sendMessage({target: 'background', type: 'connection-internal'});
-      return {connection: result?.connection || {mode: 'local'}, permission: result?.permission === true};
+      return {connection: result?.connection || {mode: 'direct'}, permission: result?.permission === true};
     }
     const connection = await HermesSession.connection();
     const permission = connection.mode === 'direct' && await chrome.permissions.contains({origins: ['https://api.openai.com/*']});

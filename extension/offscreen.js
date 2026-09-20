@@ -411,10 +411,6 @@
 
   async function startAtWord() {
     if (!wantsPlayback || !chunks.length) return;
-    if (settings.model === 'local') {
-      fail(new Error('The built-in voice must be played by the extension background worker.'));
-      return;
-    }
     const thisOperation = ++operation;
     const thisGeneration = generation;
     const targetWord = wordIndex;
@@ -562,7 +558,7 @@
     settings = {
       speed: next.speed === undefined ? settings.speed : speed(next.speed),
       voice: typeof next.voice === 'string' && next.voice ? next.voice : settings.voice,
-      model: typeof next.model === 'string' && next.model ? next.model : settings.model,
+      model: ['gpt-4o-mini-tts','tts-1','tts-1-hd'].includes(next.model) ? next.model : settings.model,
       instructions: typeof next.instructions === 'string' ? next.instructions.slice(0, 1500) : settings.instructions,
       syncMode: next.syncMode === 'estimated' ? 'estimated' : next.syncMode === 'precise' ? 'precise' : settings.syncMode,
     };

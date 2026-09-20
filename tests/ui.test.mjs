@@ -114,7 +114,7 @@ test('toolbar speed cycles without opening preferences and the menu slider suppo
   assert.equal(get('.drawer').hidden, false);
 });
 
-test('voice and engine settings exclude incompatible voices and local mode does not claim a missing OpenAI connection', t => {
+test('API voice settings exclude incompatible voices and offer connection setup', t => {
   const { ui, get, actions, dispatch } = fixture(t, { settings: { voice: 'marin' } });
   ui.update({ connected: false });
   assert.match(get('.notice').textContent, /OpenAI isn’t connected/);
@@ -131,12 +131,14 @@ test('voice and engine settings exclude incompatible voices and local mode does 
   get('#reader-follow').checked = false;
   dispatch(get('#reader-follow'), 'change');
   assert.deepEqual(actions.at(-1), { action: 'settings', payload: { follow: false } });
-  model.value = 'local';
-  dispatch(model, 'change');
-  assert.deepEqual(actions.at(-1), { action: 'settings', payload: { model: 'local' } });
-  assert.equal(get('.voice-field').hidden, true);
-  assert.equal(get('.notice').hidden, true);
-  assert.match(get('.timing-hint').textContent, /browser’s voice/);
+  assert.ok(!Array.from(model.options, option=>option.value).includes('local'));
+  ui.update({model:'local'});
+  assert.equal(model.value,'gpt-4o-mini-tts');
+  assert.equal(get('.voice-field').hidden,false);
+  assert.equal(get('.notice').hidden,false);
+  assert.doesNotMatch(get('.notice').textContent,/Browser voice/);
+  dispatch(get('.connect'),'click');
+  assert.deepEqual(actions.at(-1),{action:'setup',payload:undefined});
 });
 
 test('seeking previews locally, survives playback updates, and dispatches one seek when committed', t => {
@@ -188,7 +190,7 @@ test('article titles and error messages are rendered as text without altering th
   assert.equal(root.querySelector('img'), null);
   ui.update({ title: '<script>window.wasInjected=true</script>', status: 'error', error: '<b>API unavailable</b>' });
   assert.equal(get('.title').textContent, '<script>window.wasInjected=true</script>');
-  assert.equal(get('.notice').textContent, '<b>API unavailable</b>');
+  assert.equal(get('.notice-message').textContent, '<b>API unavailable</b>');
   assert.equal(root.querySelector('script, img, b'), null);
   assert.equal(dom.window.wasInjected, undefined);
   assert.equal(dom.window.document.querySelector('article').textContent, 'Original page text.');
@@ -349,8 +351,8 @@ test('timing source is explained accurately and precise sync is configurable wit
   ui.update({ timingSource: 'estimated' });
   assert.match(get('.timing-hint').textContent, /Estimated word timing/);
   ui.update({ model: 'local', timingSource: 'native' });
-  assert.equal(get('#reader-sync').disabled, true);
-  assert.match(get('#reader-sync-help').textContent, /own word timing/);
+  assert.equal(get('#reader-sync').disabled, false);
+  assert.match(get('#reader-sync-help').textContent, /transcription/);
 });
 
 test('remaining time always uses minutes and seconds, updates with playback and speed, and falls back without measured duration', t => {

@@ -1,6 +1,6 @@
 (() => {
   if (globalThis.__hermesReader) { globalThis.__hermesReader.open(); return; }
-  let article, ui, settings = {speed: 1.5, voice: 'alloy', model: 'local', follow: true, instructions:'', syncMode:'precise'};
+  let article, ui, settings = {speed: 1.5, voice: 'alloy', model: 'gpt-4o-mini-tts', follow: true, instructions:'', syncMode:'precise'};
   let sessionId = null, state = {status:'ready',wordIndex:0}, lastWord=-1, closed=true;
   let lastScroll=0, manualScrollUntil=0;
   const scrollParents=new WeakMap();
@@ -13,7 +13,7 @@
     const requestedSession=sessionId;
     let result=await rawSend(action,payload);
     if(sessionId!==requestedSession||closed)return {ok:true};
-    if(result?.code!=='STALE_SESSION'||!article||!['play','seek','settings'].includes(action))return result;
+    if(result?.code!=='STALE_SESSION'||!article||!['play','seek','settings','setup'].includes(action))return result;
     if(!reconnecting||reconnecting.sessionId!==requestedSession) {
       const index=state.status==='ended'?0:state.wordIndex||0;
       const pending={sessionId:requestedSession};
