@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import {JSDOM} from 'jsdom';
+import {webcrypto} from 'node:crypto';
+import {IDBFactory} from 'fake-indexeddb';
 const source=await fs.readFile(new URL('../extension/speech-client.js',import.meta.url),'utf8');
 const optionsSource=await fs.readFile(new URL('../extension/options.js',import.meta.url),'utf8');
 const optionsHTML=await fs.readFile(new URL('../extension/options.html',import.meta.url),'utf8');
@@ -49,11 +51,14 @@ test('direct speech rejects oversized upstream audio before buffering it',async(
  const {api}=client({connection:{mode:'direct',apiKey:'private-value'},fetchImpl:async()=>new Response('audio',{headers:{'content-length':String(20*1024*1024)}})});
  await assert.rejects(api.speech({text:'Hello',model:'tts-1'}),/too large/);
 });
-async function setupOptions(connection={mode:'local'}){
+async function setupOptions(connection={mode:'local'},indexedDB=new IDBFactory()){
  const dom=new JSDOM(optionsHTML,{url:'https://extension.example/options.html',runScripts:'outside-only'});
  const stored={settings:{},hermesConnection:connection},session={};let granted=true,requests=0;
  const area=data=>({setAccessLevel:async()=>{},get:async keys=>Object.fromEntries([].concat(keys).map(key=>[key,data[key]])),set:async values=>Object.assign(data,values),remove:async key=>{delete data[key];}});
  dom.window.chrome={storage:{local:area(stored),session:area(session)},permissions:{request:async()=>{requests++;return granted;},remove:async()=>true}};
+ Object.defineProperty(dom.window,'crypto',{value:webcrypto});
+ Object.assign(dom.window,{indexedDB,TextEncoder,TextDecoder,Uint8Array,ArrayBuffer});
+ dom.window.eval(await fs.readFile(new URL('../extension/credential-vault.js',import.meta.url),'utf8'));
  dom.window.eval(await fs.readFile(new URL('../extension/session-data.js',import.meta.url),'utf8'));
  const api=dom.window.HermesSession;
  dom.window.chrome.runtime={sendMessage:async message=>{
@@ -62,7 +67,7 @@ async function setupOptions(connection={mode:'local'}){
    if(message.type==='preferences-save'){await api.savePreferences({...await api.preferences(),...message.settings});return {ok:true};}
    if(message.type==='connection-manage'){
     const value=message.action==='save'?await api.saveConnection(message.connection):message.action==='forget'?await api.forgetConnection():await api.connection();
-    return {connection:{mode:value.mode,consent:value.consent,hasKey:!!value.apiKey}};
+    return {connection:{mode:value.mode,consent:value.consent,hasKey:!!value.apiKey,rememberKey:value.rememberKey,keyError:value.keyError}};
    }
    throw Error('Unexpected route');
   }catch(error){return {error:error.message};}
@@ -71,15 +76,45 @@ async function setupOptions(connection={mode:'local'}){
  let cacheEntries=2;
  dom.window.HermesAudioCache={stats:async()=>({available:true,bytes:cacheEntries*1048576,entries:cacheEntries}),clear:async()=>{cacheEntries=0;return true;}};
  dom.window.eval(optionsSource);await tick();
- return {dom,stored,session,deny:()=>{granted=false;},requests:()=>requests};
+ return {dom,stored,session,api,indexedDB,deny:()=>{granted=false;},requests:()=>requests};
 }
+async function until(predicate) {
+ for(let i=0;i<100;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,5));}
+ assert.fail('Timed out waiting for Options to settle.');
+}
+test('Options opt-in saves encrypted credentials, restores the checkbox on restart, and supports forgetting',async()=>{
+ const app=await setupOptions(),doc=app.dom.window.document,key='sk-'+'o'.repeat(32);
+ assert.equal(doc.querySelector('#remember-key').checked,false);
+ doc.querySelector('#connection-mode').value='direct';doc.querySelector('#api-key').value=key;
+ doc.querySelector('#remember-key').checked=true;doc.querySelector('#cloud-consent').checked=true;
+ doc.querySelector('#save-connection').click();
+ await until(()=>doc.querySelector('#connection-saved').textContent.includes('saved encrypted'));
+ assert.equal(app.stored.hermesConnection.rememberKey,true);assert.equal(doc.querySelector('#api-key').value,'');
+ assert.ok(!doc.body.textContent.includes(key));app.dom.window.close();
+ const fresh=await setupOptions(app.stored.hermesConnection,app.indexedDB),page=fresh.dom.window.document;
+ await until(()=>page.querySelector('#remember-key').checked);
+ assert.equal(fresh.session.hermesApiKey,key);assert.equal(page.querySelector('#api-key').value,'');
+ page.querySelector('#forget').click();
+ await until(()=>page.querySelector('#connection-saved').textContent.includes('removed from memory and encrypted storage'));
+ assert.equal(page.querySelector('#remember-key').checked,false);assert.equal((await fresh.api.connection()).apiKey,'');
+ fresh.dom.window.close();
+});
+test('Options reports encrypted storage failures without clearing the entered key or showing success',async()=>{
+ const app=await setupOptions({}, {open:()=>{throw Error('Unavailable');}}),doc=app.dom.window.document;
+ doc.querySelector('#api-key').value='sk-'+'f'.repeat(32);doc.querySelector('#cloud-consent').checked=true;doc.querySelector('#remember-key').checked=true;
+ doc.querySelector('#save-connection').click();
+ await until(()=>!doc.querySelector('#save-connection').disabled);
+ assert.match(doc.querySelector('#connection-saved').textContent,/Could not save the encrypted key/);
+ assert.ok(doc.querySelector('#api-key').value);assert.equal(app.stored.hermesConnection.rememberKey,undefined);
+ assert.equal(app.session.hermesApiKey,undefined);app.dom.window.close();
+});
 test('setup saves direct key only on deliberate Save and clears the password without rendering it',async()=>{
  const {dom,stored,session,requests}=await setupOptions();const doc=dom.window.document;
  const key='sk-'+'x'.repeat(32);
  doc.querySelector('#connection-mode').value='direct';doc.querySelector('#api-key').value=key;
  assert.equal(stored.hermesConnection.mode,'local');doc.querySelector('#cloud-consent').checked=true;doc.querySelector('#save-connection').click();await tick();
  assert.equal(requests(),1);assert.equal(session.hermesApiKey,key);assert.equal(stored.hermesConnection.apiKey,undefined);assert.equal(stored.hermesConnection.mode,'direct');assert.equal(doc.querySelector('#api-key').value,'');assert.ok(!doc.body.textContent.includes(key));
- doc.querySelector('#forget').click();await tick();assert.equal(session.hermesApiKey,undefined);assert.equal(stored.hermesConnection.apiKey,undefined);assert.ok(!doc.body.textContent.includes(key));dom.window.close();
+ doc.querySelector('#forget').click();await until(()=>!doc.querySelector('#forget').disabled);assert.equal(session.hermesApiKey,undefined);assert.equal(stored.hermesConnection.apiKey,undefined);assert.ok(!doc.body.textContent.includes(key));dom.window.close();
 });
 test('denied direct permission leaves stored local connection unchanged',async()=>{
  const {dom,stored,deny}=await setupOptions();const doc=dom.window.document;deny();
@@ -120,7 +155,7 @@ test('setup requires an unchecked-by-default disclosure before asking for host a
 test('helper consent can be withdrawn even when Chrome has no API key',async()=>{
  const {dom,stored}=await setupOptions({mode:'local',consent:true});const doc=dom.window.document;
  assert.equal(doc.querySelector('#forget').hidden,false);
- doc.querySelector('#forget').click();await tick();
+ doc.querySelector('#forget').click();await until(()=>!doc.querySelector('#forget').disabled);
  assert.equal(stored.hermesConnection.consent,false);assert.equal(doc.querySelector('#cloud-consent').checked,false);dom.window.close();
 });
 

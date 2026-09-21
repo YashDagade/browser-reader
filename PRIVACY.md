@@ -1,6 +1,6 @@
 # Hermes privacy policy
 
-Updated September 20, 2026. Applies to Hermes 0.5.0 and later unless replaced by a newer policy.
+Updated September 20, 2026. Applies to Hermes 0.6.0 and later unless replaced by a newer policy.
 
 Hermes reads webpage articles, selected passages, and pasted text aloud. All narration uses OpenAI voices with your own API key. There is no browser or on-device voice fallback. The extension sends no reading content or credentials to its developer. There is no Hermes account, developer-operated data service, analytics, advertising, or sale of user data.
 
@@ -10,7 +10,7 @@ Hermes reads webpage articles, selected passages, and pasted text aloud. All nar
 | --- | --- |
 | Article, selected, or pasted text | Extracted on your device after you invoke the reader; used for narration, word highlighting, and seeking. OpenAI receives the current and a few upcoming passages only when you enable that connection and consent. |
 | Current page title and URL | Held temporarily on your device with the reading session to identify the active article and detect navigation. Hermes does not build a browsing-history log or send these fields as OpenAI request metadata. The text you narrate can itself contain titles or URLs. |
-| Your OpenAI API key | Used only to authenticate your requests to OpenAI. Direct mode holds it in browser-session memory, not persistent extension storage. An optional local helper instead reads your private environment file. No shared developer key is provided. |
+| Your OpenAI API key | Used only to authenticate your requests to OpenAI. Direct mode uses browser-session memory and, only if you enable Remember on this device, an encrypted persistent copy in this Chrome profile. An optional local helper instead reads your private environment file. No shared developer key is provided. |
 | Custom pronunciation or delivery guidance | Held in browser-session memory and included with supported OpenAI speech requests. It is not retained with persistent preferences. |
 | Generated audio and timing data | Used for playback, highlighting, and repeat listening. Improved timing sends generated audio to OpenAI transcription to obtain word timestamps. Local cached audio and numeric timings are encrypted as described below. |
 | Nonsecret preferences | Voice/model choice, speed, layout, and other reading preferences are saved locally in your Chrome profile. Hermes does not use Chrome Sync. |
@@ -29,7 +29,9 @@ You can disable improved timing or use **Disconnect OpenAI** in Options to remov
 
 ## Storage and retention
 
-Direct-mode API keys, custom voice instructions, and the audio-cache encryption key stay in browser-session memory, including Chrome's session storage. They are not deliberately written to disk by Hermes or synced. Quitting Chrome discards them; you must provide the API key again for a new browser session. Initialization moves any API key or custom guidance retained by older versions into session memory and removes those fields from persistent local storage. The current article text, title, URL, and playback position are also temporary session data. Closing the reader or leaving its document clears the active reading session.
+Direct-mode API keys use browser-session memory while in use. By default, quitting Chrome discards the key. If you enable **Remember on this device** and save, Hermes additionally stores an **AES-256-GCM encrypted credential** and a **non-exportable Web Crypto decryption key** in a separate extension-owned IndexedDB database. This lets Hermes restore the key into session memory automatically after Chrome restarts. Both the ciphertext and the decryption key live in the same Chrome profile. This is not an OS keychain or hardware-backed guarantee; encryption reduces plaintext exposure but does not protect against someone who controls your browser, computer, or a copy of its profile. Hermes does not sync either record. The saved credential remains until you turn Remember off and save, disconnect, remove the extension, or Chrome removes its data.
+
+Custom voice instructions and the separate audio-cache encryption key always remain in browser-session memory and are discarded when Chrome quits. Remembering your API key does not persist voice guidance or make audio reusable across browser restarts. Initialization moves any API key or custom guidance retained by older versions into session memory and removes those fields from persistent local storage. The current article text, title, URL, and playback position are also temporary session data. Closing the reader or leaving its document clears the active reading session.
 
 For repeat listening within the same browser session, Hermes encrypts audio and numeric word-timing data with **AES-256-GCM** before saving it in the extension's IndexedDB database. The cache has a **32 MiB audio-size budget**, **256-entry** limit, and **seven-day maximum lifetime**; encryption and storage metadata add overhead. The lookup identifier is a hash of speech inputs; plaintext source text, article URLs, transcription text, and API keys are not stored in that database. Earlier plaintext audio records are purged on upgrade to this format.
 
@@ -39,7 +41,7 @@ The optional local helper separately holds completed audio and timing results in
 
 ## Deletion, security, and limited use
 
-Use **Clear saved audio** in Options to remove the encrypted extension cache. Stop reading first if you want to avoid new audio being cached. **Disconnect OpenAI** removes the direct-mode key and optional OpenAI permission and resets consent; it is separate from clearing audio. Remove the extension to remove its Chrome-managed storage. Delete any helper environment file yourself and stop the helper when you no longer want to use it.
+Use **Clear saved audio** in Options to remove the encrypted extension cache. Stop reading first if you want to avoid new audio being cached. **Disconnect OpenAI** deletes the encrypted credential and its decryption key, removes the memory copy and optional OpenAI permission, and resets consent; it is separate from clearing audio. Remove the extension to remove its Chrome-managed storage. Delete any helper environment file yourself and stop the helper when you no longer want to use it.
 
 API credentials are restricted to trusted extension contexts, and webpage content scripts do not receive them. Trusted-event checks prevent webpage scripts from initiating paid actions through synthetic clicks. All runtime JavaScript is bundled with the extension. These controls do not protect against a compromised computer or browser session.
 

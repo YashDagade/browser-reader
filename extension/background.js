@@ -1,4 +1,4 @@
-importScripts('session-data.js', 'speech-client.js');
+importScripts('credential-vault.js', 'session-data.js', 'speech-client.js');
 const DEFAULTS = {speed:1.5, voice:'alloy', model:'gpt-4o-mini-tts', follow:true, instructions:'', syncMode:'precise'};
 const IDLE_ALARM = 'hermes-release-audio';
 let current = null, creating = null, saveAt = 0, lastStatus = '';
@@ -153,7 +153,7 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
     enqueue(async()=>{
       const value=message.action==='save'?await HermesSession.saveConnection(message.connection||{}):
         message.action==='forget'?await HermesSession.forgetConnection():await HermesSession.connection();
-      reply({connection:{mode:value.mode,consent:value.consent,hasKey:Boolean(value.apiKey)}});
+      reply({connection:{mode:value.mode,consent:value.consent,hasKey:Boolean(value.apiKey),rememberKey:value.rememberKey,keyError:value.keyError}});
     }).catch(error=>reply({error:error.message}));return true;
   }
   if(message.type==='preferences-save') {

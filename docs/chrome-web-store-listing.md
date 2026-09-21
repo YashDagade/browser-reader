@@ -1,6 +1,6 @@
 # Chrome Web Store submission
 
-**Target version: 0.5.0. Status: prepared, not yet submitted.** This API-only update replaces the 0.4.0 package previously submitted on September 20, 2026. The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. Final submission and approval must be verified in the dashboard. The publisher's account address is intentionally absent from public source.
+**Target version: 0.6.0. Status: prepared, not yet submitted.** This API-only update adds optional encrypted credential storage and replaces the 0.4.0 package previously submitted on September 20, 2026. The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. Final submission and approval must be verified in the dashboard. The publisher's account address is intentionally absent from public source.
 
 ## Listing fields
 
@@ -37,7 +37,7 @@ Privacy and setup:
 
 - No speech request is made until you connect your API key and consent.
 - OpenAI narration requires an explicit data-sharing choice. Narration text, a few upcoming passages, and applicable voice guidance go to OpenAI. Improved timing also sends generated audio.
-- The direct-mode key and voice instructions last for the current browser session. They are not synced or persistently saved by Hermes.
+- Optionally remember your API key encrypted in this Chrome profile, so it survives browser restarts. The decryption key stays in the same profile; this is not OS keychain protection. Without remembering, the key lasts only for the current session. Voice guidance is always session-only. Nothing is synced.
 - Audio is cached locally with encryption for reuse within the same browser session. Clear it from Options.
 - No Hermes account, analytics, advertising, or developer-operated content service.
 
@@ -52,7 +52,7 @@ Use the dashboard's actual field labels. These declarations describe data handle
 | Data category | Disclosure and scope |
 | --- | --- |
 | Website content | Disclose. User-invoked article/selection/pasted text, generated narration, and timing results are processed to provide reading. Consent controls transfer to OpenAI. |
-| Authentication information | Disclose. The user's own OpenAI key is handled in session memory and sent only to OpenAI for authentication, or read by the optional local helper. |
+| Authentication information | Disclose. The user's own OpenAI key is handled in session memory with opt-in encrypted persistent storage, and sent only to OpenAI for authentication, or read by the optional local helper. |
 | Personal communications | Disclose as incidental user-selected content. Hermes can narrate messages or other communications that the user selects or pastes; it has no mail integration or background inbox access. |
 | Web history / browsing activity | Disclose narrowly: current document URL and title are held temporarily for the reading session. No history log is collected, and these fields are not sent as API metadata. |
 | Personally identifiable, health, financial/payment, or location information | Disclose that these may occur inside text the user chooses to narrate. Hermes has no separate collection or extraction of these categories. Do not certify that they can never be handled; map incidental content to the applicable dashboard categories before submitting. |
@@ -66,7 +66,7 @@ Use the dashboard's actual field labels. These declarations describe data handle
 | --- | --- |
 | `activeTab` | Read the current page only after the user invokes Hermes, without blanket access to all sites. |
 | `scripting` | Inject the bundled extractor, player, and highlighting controls into that invoked tab. |
-| `storage` | Store nonsecret preferences, temporary session state and credentials, and the bounded encrypted audio cache. No Chrome Sync is used. |
+| `storage` | Store nonsecret preferences, temporary session state, credentials in memory with optional encrypted persistence, and the bounded encrypted audio cache. No Chrome Sync is used. |
 | `offscreen` | Play generated audio independently of the page UI and manage its bounded audio resources. The document is released on stop/close or idle cleanup. |
 | `contextMenus` | Provide the user-invoked “Read with Hermes” page/selection action. |
 | `alarms` | Release an inactive audio document after three idle minutes; not used to poll browsing activity. |
@@ -80,13 +80,13 @@ Use the dashboard's actual field labels. These declarations describe data handle
 Hermes has no login or subscription. Audio playback requires a reviewer-owned OpenAI API key with speech access and available API credit; no developer credential is supplied.
 
 1. Install the extension in desktop Chrome and open a public article. Click Hermes. Before API setup, a **Connect OpenAI** prompt should appear; it opens Options. No system voice or speech request should start.
-2. In Options, select **Direct from Chrome**, supply a reviewer-owned OpenAI API key, read the disclosure, check consent, and click **Save connection**. Grant the optional OpenAI host permission. The key is held only in browser-session memory.
+2. In Options, select **Direct from Chrome**, supply a reviewer-owned OpenAI API key, read the disclosure, check consent, and click **Save connection**. Grant the optional OpenAI host permission. Leave **Remember on this device** unchecked to keep the key session-only, or enable it to save an encrypted copy that restores after Chrome restarts. The decryption key also lives in the same Chrome profile.
 3. Return to the article and click **Start reading**. The default is Alloy with OpenAI expressive (`gpt-4o-mini-tts`). Test play/pause/stop, passage skipping, highlighting, and double-click seeking on a non-link word.
 4. Cycle the toolbar speed button and use the 0.75×–4× slider. Speed-only changes must reuse audio without new speech requests. Drag near each edge to dock, then collapse and expand the reader.
 5. Close Hermes, select a passage, and reopen it. Test pasted text through **Read your own text**. Pasted text has no page-word highlights.
 6. Test another OpenAI voice and optional voice instructions. Improved timing adds transcription requests; lightweight timing does not. No speech or alignment request may occur without consent.
 7. **Disconnect OpenAI** removes the direct key and permission and resets consent. Subsequent playback shows setup guidance and does not fall back to browser speech. Invalid API credentials produce an error, not a different voice.
-8. Close and reopen the reader during the same Chrome session to exercise encrypted audio reuse. Clear the cache in Options. Quit and restart Chrome to verify the key and custom guidance must be supplied again and previous cached audio cannot be decrypted.
+8. Close and reopen the reader during the same Chrome session to exercise encrypted audio reuse. Clear the cache in Options. Quit and restart Chrome to verify custom guidance must be supplied again and previous cached audio cannot be decrypted. A remembered API key must restore automatically; a session-only key must require setup. Uncheck Remember and save to delete the saved credential, then verify it does not restore after another restart.
 9. The local Node helper is an optional alternative API transport and also requires a user-owned OpenAI key. It is not required for direct mode.
 
 A page reload or replacement can require reopening the reader. Same-document links should preserve the session. Chrome-restricted pages and PDFs are outside scope. The repository's linked v0.2.0 demo shows an earlier interface; use current screenshots and this release's behavior for review.
@@ -105,6 +105,6 @@ The screenshot shows the earlier v0.4.0 player and word highlighting; v0.5.0 use
 
 ## Submission handoff
 
-Use the store ZIP with `manifest.json` at its root, not the general unpacked-install ZIP that contains an `extension` folder. Confirm its version is 0.5.0 and it contains only extension assets; no environment files, API keys, local helper, test credentials, or private material. Complete the store's listing, privacy, distribution, and reviewer fields in the publisher dashboard, then verify the resulting status there. Uploading a ZIP alone is not submission or approval.
+Use the store ZIP with `manifest.json` at its root, not the general unpacked-install ZIP that contains an `extension` folder. Confirm its version is 0.6.0 and it contains only extension assets; no environment files, API keys, local helper, test credentials, or private material. Complete the store's listing, privacy, distribution, and reviewer fields in the publisher dashboard, then verify the resulting status there. Uploading a ZIP alone is not submission or approval.
 
 This is a desktop Chrome release. Google's [compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en) says mobile devices cannot install Chrome extensions even in desktop mode. iPhone/iPad support would require a separate app or Safari extension port and its own distribution process.

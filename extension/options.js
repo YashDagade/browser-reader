@@ -23,7 +23,8 @@ async function initialize() {
   const [{settings = {}}, {connection}] = await Promise.all([background('preferences'), background('connection-manage', {action: 'get'})]);
   model.value = ['gpt-4o-mini-tts','tts-1','tts-1-hd'].includes(settings.model) ? settings.model : 'gpt-4o-mini-tts'; voice.value = settings.voice || 'alloy';
   $('#instructions').value = settings.instructions || ''; $('#sync-mode').value = settings.syncMode || 'precise';
-  mode.value = connection.mode; $('#forget').hidden = !connection.hasKey && !connection.consent;
+  mode.value = connection.mode; $('#forget').hidden = !connection.hasKey && !connection.consent && !connection.rememberKey;
+  $('#remember-key').checked = connection.rememberKey === true;
   $('#cloud-consent').checked = connection.consent === true;
   connectionFields(); voiceOptions(); await Promise.all([check(), showCache()]);
 }
@@ -45,13 +46,14 @@ $('#key-file').addEventListener('change', async event => {
     const value = match?.[1] || text.trim();
     if (!/^sk-[A-Za-z0-9_-]{16,}$/.test(value)) throw Error('No OpenAI API key was found in this file.');
     importedKey = value; $('#api-key').value = '';
-    $('#import-status').textContent = 'Key read locally. Click Save connection to keep it in memory until Chrome quits.';
+    $('#import-status').textContent = 'Key read locally. Choose whether to remember it, then click Save connection.';
   } catch (error) { $('#import-status').textContent = error.message; }
   event.target.value = '';
 });
 $('#api-key').addEventListener('input', () => { importedKey = ''; $('#import-status').textContent = ''; });
 $('#save-connection').addEventListener('click', async () => {
   const status = $('#connection-saved'); status.textContent = '';
+  $('#save-connection').disabled = true;
   try {
     if (!$('#cloud-consent').checked) {
       status.textContent = 'Review and accept the OpenAI disclosure before saving.'; return;
@@ -61,20 +63,29 @@ $('#save-connection').addEventListener('click', async () => {
       status.textContent = 'OpenAI permission was not granted. Your connection is unchanged.'; return;
     }
     const {connection} = await background('connection-manage', {action: 'save', connection: {
-      mode: mode.value, apiKey: mode.value === 'direct' ? $('#api-key').value.trim() || importedKey : undefined, consent: true,
+      mode: mode.value, apiKey: mode.value === 'direct' ? $('#api-key').value.trim() || importedKey : undefined, consent: true, rememberKey: $('#remember-key').checked,
     }});
     importedKey = ''; $('#api-key').value = ''; $('#import-status').textContent = '';
-    $('#forget').hidden = !connection.hasKey && !connection.consent;
-    status.textContent = mode.value === 'direct' ? 'Key kept in memory until Chrome quits. No local helper is required.' : 'Local helper selected.';
+    $('#forget').hidden = !connection.hasKey && !connection.consent && !connection.rememberKey;
+    $('#remember-key').checked = connection.rememberKey === true;
+    status.textContent = connection.mode === 'direct'
+      ? connection.rememberKey ? 'Key saved encrypted on this device. Hermes will reconnect after Chrome restarts. No local helper is required.'
+        : 'Key kept in memory until Chrome quits. No local helper is required.'
+      : 'Local helper selected. Any key previously saved in Chrome was removed.';
     await check();
   } catch (error) { status.textContent = error.message; }
+  finally { $('#save-connection').disabled = false; }
 });
 $('#forget').addEventListener('click', async () => {
-  await background('connection-manage', {action: 'forget'});
-  await chrome.permissions.remove({origins: ['https://api.openai.com/*']});
-  importedKey = ''; $('#api-key').value = ''; $('#key-file').value = ''; $('#import-status').textContent = '';
-  $('#cloud-consent').checked = false;
-  $('#forget').hidden = true; $('#connection-saved').textContent = 'The key was removed from memory and OpenAI consent was reset.'; await check();
+  $('#forget').disabled = true;
+  try {
+    await background('connection-manage', {action: 'forget'});
+    await chrome.permissions.remove({origins: ['https://api.openai.com/*']});
+    importedKey = ''; $('#api-key').value = ''; $('#key-file').value = ''; $('#import-status').textContent = '';
+    $('#cloud-consent').checked = false; $('#remember-key').checked = false;
+    $('#forget').hidden = true; $('#connection-saved').textContent = 'The key was removed from memory and encrypted storage. OpenAI consent was reset.'; await check();
+  } catch (error) { $('#connection-saved').textContent = error.message; }
+  finally { $('#forget').disabled = false; }
 });
 async function check() {
   const state = await HermesSpeech.health();
@@ -85,6 +96,7 @@ async function check() {
     $('#connection').textContent = 'Review OpenAI data sharing';
     $('#detail').textContent = 'Review the disclosure below, check the consent box, and save before using an OpenAI voice.';
   }
+  if (connection.keyError) { $('#connection').textContent = 'Reconnect your OpenAI key'; $('#detail').textContent = connection.keyError; }
   if (new URLSearchParams(location.search).has('restricted')) $('#detail').textContent += ' This Chrome page cannot run the reader. Try a regular article webpage.';
 }
 $('#check').addEventListener('click', check);

@@ -13,7 +13,7 @@ Click **Start reading**, follow the highlighted words, and change speed from **0
 
 ## Install and listen
 
-Requires **desktop Chrome 116+**. Version **0.5.0 removes browser voices and requires OpenAI**. The previous 0.4.0 package was submitted for review; the API-only update is being prepared for submission. Install the unpacked extension below. Chrome extensions do not run on iPhone or iPad, even in desktop mode; a Safari version would require a separate port. See [Google's device compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en).
+Requires **desktop Chrome 116+**. Version **0.6.0 adds optional encrypted key storage that survives Chrome restarts**. All narration requires OpenAI. The previous 0.4.0 package was submitted for review; the current update is being prepared for submission. Install the unpacked extension below. Chrome extensions do not run on iPhone or iPad, even in desktop mode; a Safari version would require a separate port. See [Google's device compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en).
 
 1. [Download `hermes-extension.zip`](https://github.com/YashDagade/browser-reader/releases/latest/download/hermes-extension.zip) and extract it to a folder you will keep.
 2. Open `chrome://extensions` and enable **Developer mode**.
@@ -29,10 +29,12 @@ You can also [clone the repository](https://github.com/YashDagade/browser-reader
 1. Right-click Hermes in Chrome's toolbar and open **Options**.
 2. Under **How to connect**, choose **Direct from Chrome · no Node or server**.
 3. Enter your own OpenAI API key, or import a local `.env.local` file containing `OPENAI_API_KEY`. The file is read locally and is not uploaded.
-4. Read the OpenAI data-sharing disclosure, check the consent box, and click **Save connection**. Allow the optional permission to access `api.openai.com`.
+4. To stay connected after quitting Chrome, enable **Remember on this device**. Read the OpenAI data-sharing disclosure, check the consent box, and click **Save connection**. Allow the optional permission to access `api.openai.com`.
 5. Choose **OpenAI · expressive** and a voice in the player. Try Alloy, Cedar, or Nova.
 
-**The direct-mode key and custom voice instructions stay in browser-session memory.** They are not saved to disk or synced and must be supplied again after Chrome fully quits. The key is restricted to trusted extension contexts and never sent to webpage content scripts. **Disconnect OpenAI** removes it, resets consent, and removes the optional API permission. The first speech request verifies the key with OpenAI.
+**Remember on this device** is optional and off by default. When enabled, Hermes encrypts the API key with AES-256-GCM and restores it automatically after Chrome restarts. No Node, server, or extra password is required. The non-exportable decryption key is stored in the same Chrome profile as the encrypted credential: this is not macOS Keychain protection and cannot protect against a compromised computer, browser, or copied profile. Nothing is synced.
+
+Without remembering, the API key lasts only until Chrome quits. Custom voice instructions always remain session-only. Credentials are restricted to trusted extension contexts and never sent to webpage content scripts. **Disconnect OpenAI** deletes the remembered credential and its decryption key, clears the memory copy, resets consent, and removes the optional API permission. Unchecking Remember and saving deletes the durable copy but keeps the current session connected. The first speech request verifies the key with OpenAI.
 
 For file-based setup, create a file named `.env.local` on your computer with one line: `OPENAI_API_KEY=your_own_key_here` (replace the placeholder locally). If you cloned the repository, copy `.env.example` to `.env.local` first. Import that private file in Options; do not put the key in extension source files.
 
@@ -114,6 +116,6 @@ Earlier 0.4.0 interface screenshot. Version 0.5.0 uses only OpenAI narration.
 
 [![Hermes: a movable Chrome reader with highlighting, voice controls, and adjustable speed](docs/demo-poster.png)](docs/hermes-demo.mp4)
 
-[Watch the v0.2.0 walkthrough (MP4)](docs/hermes-demo.mp4). This silent, captioned demo shows an earlier interface and setup flow. Current versions use double-click word seeking, direct speed cycling, edge docking, explicit OpenAI consent, and session-only credentials.
+[Watch the v0.2.0 walkthrough (MP4)](docs/hermes-demo.mp4). This silent, captioned demo shows an earlier interface and setup flow. Current versions use double-click word seeking, direct speed cycling, edge docking, explicit OpenAI consent, and optional encrypted credential storage.
 
 Hermes keeps the article in place and adds a player you can move out of the way. Text extraction runs locally, short audio chunks keep playback responsive, and speed changes happen in the player. OpenAI supplies all narration; local extraction does not rewrite the article. To try the sample article, run `npm run demo` from the full repository and open the local address printed in the terminal.

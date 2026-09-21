@@ -3,12 +3,15 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
 import {webcrypto} from 'node:crypto';
+import {IDBFactory} from 'fake-indexeddb';
+const vaultSource = await readFile(new URL('../extension/credential-vault.js', import.meta.url), 'utf8');
 const sessionSource = await readFile(new URL('../extension/session-data.js', import.meta.url), 'utf8');
 
 const source = await readFile(new URL('../extension/background.js', import.meta.url), 'utf8');
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
 function harness() {
+  const indexedDB=new IDBFactory();
   let listener, hasOffscreen = false, audioSession = null, documentAlive=true;
   const events = {}, messages = [], audio = [], saved = {}, local = {hermesConnection:{mode:'direct',apiKey:'private-test-value',consent:true}}, accesses=[];
   const event = name => ({ addListener: callback => { events[name] = callback; } });
@@ -37,8 +40,8 @@ function harness() {
     commands: { onCommand: event('command') },
     contextMenus: { onClicked: event('context') },
   };
-  const restartWorker = () => vm.runInNewContext(sessionSource+'\n'+source, {
-    chrome, crypto:webcrypto, clearInterval, setInterval, AbortSignal, importScripts:()=>{}, HermesSpeech:{health:async()=>({configured:true,mode:'direct',running:true})},
+  const restartWorker = () => vm.runInNewContext(vaultSource+'\n'+sessionSource+'\n'+source, {
+    chrome, crypto:webcrypto, indexedDB, TextEncoder, TextDecoder, Uint8Array, ArrayBuffer, clearInterval, setInterval, AbortSignal, importScripts:()=>{}, HermesSpeech:{health:async()=>({configured:true,mode:'direct',running:true})},
     fetch: async () => ({ json: async () => ({ configured: true }) }),
   });
   restartWorker();
@@ -51,6 +54,22 @@ function harness() {
   const message=(type,extra={},sender={tab:{id:7}})=>new Promise(resolve=>listener({target:'background',type,...extra},sender,resolve));
   return {restartWorker,replaceDocument:()=>{documentAlive=false;},command,load,state,message,messages,audio,events,saved,local,accesses,hasOffscreen:()=>hasOffscreen,expire:()=>{hasOffscreen=false;audioSession=null;}};
 }
+
+test('background restores remembered credentials after session loss and exposes only safe setup metadata',async()=>{
+  const app=harness(),options={url:'chrome-extension://hermes/options.html'},key='sk-'+'b'.repeat(32);
+  const saved=await app.message('connection-manage',{action:'save',connection:{mode:'direct',consent:true,rememberKey:true,apiKey:key}},options);
+  assert.equal(saved.connection.rememberKey,true);assert.equal(saved.connection.hasKey,true);assert.equal(saved.connection.apiKey,undefined);
+  for(const property of Object.keys(app.saved))delete app.saved[property];
+  app.restartWorker();
+  const view=await app.message('connection-manage',{action:'get'},options);
+  assert.equal(view.connection.hasKey,true);assert.equal(app.saved.hermesApiKey,key);
+  assert.ok(!JSON.stringify(view).includes(key));
+  assert.equal((await app.message('connection-internal')).error,'Not permitted.');
+  await app.message('connection-manage',{action:'forget'},options);
+  for(const property of Object.keys(app.saved))delete app.saved[property];
+  app.restartWorker();
+  assert.equal((await app.message('connection-manage',{action:'get'},options)).connection.hasKey,false);
+});
 
 test('default and legacy browser settings use OpenAI without a native TTS API', async () => {
   const app=harness();
