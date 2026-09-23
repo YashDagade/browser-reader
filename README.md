@@ -9,11 +9,11 @@ Click **Start reading**, follow the highlighted words, and change speed from **0
 - Double-click a word to jump there, follow along with optional auto-scroll, or read selected/pasted text. Single clicks keep their normal behavior.
 - Local article extraction skips common navigation, ads, controls, and captions. Substack posts use their title and article body, excluding publication footers, recommendations, and signup widgets. No LLM rewrites the article.
 - OpenAI voices including **Alloy**, **Cedar**, and **Nova**, with delivery and pronunciation guidance for `gpt-4o-mini-tts`.
-- Short initial audio chunks, bounded prefetch, optional background word alignment, and saved audio for repeat listening. Speed changes never trigger an API request.
+- Short initial audio chunks, bounded prefetch, optional background word alignment, and saved audio for repeat listening. Toolbar speed changes reuse audio without another API request.
 
 ## Install and listen
 
-Requires **desktop Chrome 116+**. Version **0.6.0 adds optional encrypted key storage that survives Chrome restarts**. All narration requires OpenAI. The previous 0.4.0 package was submitted for review; the current update is being prepared for submission. Install the unpacked extension below. Chrome extensions do not run on iPhone or iPad, even in desktop mode; a Safari version would require a separate port. See [Google's device compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en).
+Requires **desktop Chrome 116+**. Version **0.7.0 adds a preferred OpenAI narration speed, starting at 2.3×**, alongside optional encrypted key storage that survives Chrome restarts. All narration requires OpenAI. The previous 0.4.0 package was submitted for review; this update has not been submitted. Install the unpacked extension below. Chrome extensions do not run on iPhone or iPad, even in desktop mode; a Safari version would require a separate port. See [Google's device compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en).
 
 1. [Download `hermes-extension.zip`](https://github.com/YashDagade/browser-reader/releases/latest/download/hermes-extension.zip) and extract it to a folder you will keep.
 2. Open `chrome://extensions` and enable **Developer mode**.
@@ -61,12 +61,17 @@ Install the extension separately in each Chrome profile. Direct keys and prefere
 | Pause | `Escape` while the page is focused |
 | Cycle speed | Toolbar speed button: 1× → 1.5× → 2× → 4× |
 | Set any speed or change voice | Settings; the speed slider covers 0.75×–4× |
+| Set the default narration speed | Settings → Voice & reading preferences, or extension Options |
 | Seek | Double-click a non-link word or use the position slider |
 | Move between passages | Previous / next buttons |
 | Move / dock / collapse | Drag handle, drop near any edge, or use position/collapse controls |
 | Reset or close | Stop or close; closing stops playback |
 
 Select a passage before opening Hermes to read just that selection. **Read your own text** accepts pasted text without page highlighting. Customize the opening shortcut at `chrome://extensions/shortcuts` if another app claims it.
+
+**Two speed controls:** Default narration speed tells OpenAI how quickly to generate the recording and sets the starting speed for a new reader. It defaults to **2.3×** and accepts **0.75×–4×**. Editing it in the player applies when you leave the field, preserves your word position, and may request new audio. Options changes apply when you next open a reader. The ordinary toolbar button and reading-speed slider adjust the existing recording locally and never regenerate it. At a 2.3× narration default, choosing 2.3× plays the file at its original rate; choosing 1× plays it at `1 / 2.3`. Word timing and the countdown follow that ratio.
+
+Setting the default to **1×** restores the previous generation behavior. OpenAI does not document that its speed parameter sounds better than browser time stretching; compare the two with your preferred voice. Slowing a fast recording may sound different from generating a new recording at 1×. See the [speech-provider research notes](docs/tts-options.md) for Azure and ElevenLabs options.
 
 Dropping near the left or right edge makes the toolbar vertical; top and bottom keep it horizontal. Auto-scroll moves before the spoken word reaches the bottom and briefly yields to manual scrolling. Same-page links keep the reading session alive. If its background session is lost, the controls reconnect to the current article at the saved word.
 
@@ -76,7 +81,7 @@ Dropping near the left or right edge makes the toolbar vertical; top and bottom 
 
 ## Privacy and limits
 
-Hermes runs on the active tab only when invoked, with no analytics, ads, or developer-operated data service. Browser mode uses an installed, non-remote voice and sends nothing to OpenAI. With your explicit consent, OpenAI receives current and prefetched text, applicable voice guidance, and generated audio for improved timing. Page title and URL are held temporarily on your device to manage the reading session; they are not sent as API metadata. Text you choose to read may itself contain sensitive information or URLs.
+Hermes runs on the active tab only when invoked, with no analytics, ads, or developer-operated data service. With your explicit consent, OpenAI receives current and prefetched text, applicable voice guidance, and generated audio for improved timing. Page title and URL are held temporarily on your device to manage the reading session; they are not sent as API metadata. Text you choose to read may itself contain sensitive information or URLs.
 
 Hermes keeps up to **12 MiB** of audio in memory and encrypts completed audio and timings with **AES-256-GCM** before storing them in IndexedDB. Saved audio has a **32 MiB** budget, **256-entry** limit, and **seven-day maximum lifetime**, plus encryption and metadata overhead. The encryption key exists only in browser-session memory. Audio can be reused after closing and reopening the reader within that session, but not after Chrome restarts. The cache contains no API keys or plaintext source text/URLs. Earlier plaintext cache records are purged on upgrade. **Clear saved audio** in Options removes the encrypted cache.
 

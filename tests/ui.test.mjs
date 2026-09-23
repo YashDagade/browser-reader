@@ -87,7 +87,7 @@ test('playback controls dispatch actions appropriate to current state and stoppi
 });
 
 test('toolbar speed cycles without opening preferences and the menu slider supports intermediate speeds', t => {
-  const { get, actions, dispatch } = fixture(t);
+  const { get, actions, dispatch } = fixture(t, { settings: { speed: 1 } });
   const button = get('.speed-toggle');
   for (const speed of [1.5, 2, 4, 1]) {
     assert.match(button.getAttribute('aria-label'), new RegExp(`Change to ${speed}×`));
@@ -356,7 +356,7 @@ test('timing source is explained accurately and precise sync is configurable wit
 });
 
 test('remaining time always uses minutes and seconds, updates with playback and speed, and falls back without measured duration', t => {
-  const { ui, get } = fixture(t, { totalWords: 24000 });
+  const { ui, get } = fixture(t, { totalWords: 24000, settings: { speed: 1 } });
   ui.update({ remainingSeconds: 7321, status: 'playing' });
   assert.equal(get('.time').textContent, '122:01');
   ui.update({ remainingSeconds: 7319 });
@@ -531,4 +531,24 @@ test('synthetic window events cannot hijack or finish a genuine drag', t => {
   assert.equal(ui.host.style.left, '240px');
   assert.equal(ui.host.style.top, '240px');
   assert.equal(actions.length, 1);
+});
+
+test('narration defaults to 2.3 and commits once without confusing generated speed with playback speed', t => {
+ const {ui,get,actions,dispatch}=fixture(t);
+ const input=get('#reader-generation-speed');
+ assert.equal(input.value,'2.3');
+ assert.equal(get('.speed-toggle').textContent,'2.3×');
+ input.focus();input.value='3.25';dispatch(input,'input');
+ ui.update({wordIndex:20,status:'playing'});
+ assert.equal(input.value,'3.25');
+ assert.equal(actions.length,0);
+ dispatch(input,'change');
+ assert.deepEqual(actions.at(-1),{action:'settings',payload:{generationSpeed:3.25,speed:3.25}});
+ dispatch(input,'change');
+ assert.equal(actions.length,1);
+ get('.speed-toggle').click();
+ assert.deepEqual(actions.at(-1),{action:'settings',payload:{speed:4}});
+ assert.equal(input.value,'3.25');
+ for (const invalid of ['','0','8']) {input.value=invalid;dispatch(input,'change');}
+ assert.equal(actions.length,2);
 });

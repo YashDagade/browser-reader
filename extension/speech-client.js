@@ -49,14 +49,16 @@
     return result;
   }
   function payload(input) {
-    return {text: input.text, voice: input.voice, model: input.model, instructions: String(input.instructions || '').trim().slice(0, 1000)};
+    const generationSpeed = input.generationSpeed ?? 1;
+    if (!Number.isFinite(generationSpeed) || generationSpeed < 0.75 || generationSpeed > 4) throw Error('Narration speed must be between 0.75× and 4×.');
+    return {text: input.text, voice: input.voice, model: input.model, generationSpeed, instructions: String(input.instructions || '').trim().slice(0, 1000)};
   }
   async function speech(input, signal) {
     const data = payload(input);
     const {connection, permission} = await config();
     if (connection.consent !== true) throw Error('Open Hermes Options and accept the OpenAI disclosure before reading with an OpenAI voice.');
     if (connection.mode !== 'direct') return safeFetch(`${LOCAL}/v1/speech`, {method: 'POST', headers: localHeaders, body: JSON.stringify(data), signal});
-    const body = {model: data.model, voice: data.voice, input: data.text, response_format: 'wav', speed: 1};
+    const body = {model: data.model, voice: data.voice, input: data.text, response_format: 'wav', speed: data.generationSpeed};
     if (data.model === 'gpt-4o-mini-tts') body.instructions = instructions + (data.instructions ? '\nAdditional pronunciation and delivery guidance: ' + data.instructions : '');
     const response = await safeFetch(`${API}speech`, {method: 'POST', headers: directHeaders(connection, permission), body: JSON.stringify(body), signal});
     if (!response.ok) { await response.body?.cancel(); throw upstreamError(response.status); }

@@ -129,8 +129,12 @@
   async function keyFor(payload) {
     if (!globalThis.indexedDB || !globalThis.crypto?.subtle) return null;
     const model = String(payload.model || '');
-    const canonical = JSON.stringify([VERSION, model, String(payload.voice || ''),
-      String(payload.text || ''), model === 'gpt-4o-mini-tts' ? String(payload.instructions || '').trim().slice(0, 1000) : '']);
+    const parts = [VERSION, model, String(payload.voice || ''),
+      String(payload.text || ''), model === 'gpt-4o-mini-tts' ? String(payload.instructions || '').trim().slice(0, 1000) : ''];
+    // Keep existing 1× recordings reusable after upgrading. Other source speeds
+    // require their own audio and timestamps; toolbar playback speed is omitted.
+    if ((payload.generationSpeed ?? 1) !== 1) parts.push(payload.generationSpeed);
+    const canonical = JSON.stringify(parts);
     try {
       const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
       return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');

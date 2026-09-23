@@ -17,7 +17,7 @@ test('health reveals only configuration, refuses website origins and DNS-rebound
 });
 test('missing credential gives actionable error without contacting upstream',async t=>{
  const request=await fixture(t,{key:'',fetchImpl:()=>{throw Error('must not call')}});
- const result=await request('/v1/speech',{method:'POST',body:JSON.stringify({text:'Test.'})});assert.equal(result.status,503);assert.match((await result.json()).error,/On-device/);
+ const result=await request('/v1/speech',{method:'POST',body:JSON.stringify({text:'Test.'})});assert.equal(result.status,503);assert.match((await result.json()).error,/API key/);
 });
 test('speech validates input and reuses audio while speed is applied locally',async t=>{
  let count=0,payload;
@@ -87,4 +87,24 @@ test('configured extension allowlist also protects transcription route',async t=
  const body=JSON.stringify({text:'Hello'});
  assert.equal((await request('/v1/align',{method:'POST',body,headers:{Origin:'chrome-extension://'+'b'.repeat(32)}})).status,403);
  assert.equal((await request('/health',{headers:{Origin:'chrome-extension://'+'a'.repeat(32)}})).status,200);
+});
+
+test('generation speed reaches OpenAI and isolates cached speech and alignment from other source speeds', async t => {
+ const speeds = [], aligned = [];
+ const request = await fixture(t, {key:'test-key', fetchImpl:async(url, options) => {
+  if (url.endsWith('/speech')) {
+   const speed = JSON.parse(options.body).speed; speeds.push(speed);
+   return new Response(`RIFF-${speed}`);
+  }
+  aligned.push(await options.body.get('file').text());
+  return Response.json({words:[{word:'Sample',start:0,end:.5}]});
+ }});
+ const call = (route, generationSpeed, speed = 1) => request(route, {method:'POST', body:JSON.stringify({text:'Sample',generationSpeed,speed})});
+ for (const speed of [2.3, 1, 4]) await (await call('/v1/speech', speed)).arrayBuffer();
+ await (await call('/v1/speech', 2.3, 4)).arrayBuffer();
+ assert.deepEqual(speeds, [2.3, 1, 4]);
+ for (const speed of [1, 2.3]) await (await call('/v1/align', speed)).json();
+ assert.deepEqual(aligned, ['RIFF-1', 'RIFF-2.3']);
+ for (const speed of [null, '2.3', 0, 8]) assert.equal((await call('/v1/speech', speed)).status, 400);
+ assert.equal(speeds.length, 3);
 });

@@ -175,3 +175,28 @@ test('direct mode with no API key cannot fall back to another voice or make a re
  await assert.rejects(api.speech({text:'Hello',model:'gpt-4o-mini-tts'}),/Save an OpenAI API key/);
  assert.equal(requests,0);
 });
+
+test('both speech transports forward generation speed and reject invalid values before a paid request', async () => {
+ for (const mode of ['direct', 'local']) {
+  const bodies=[];
+  const {api}=client({connection:{mode,apiKey:'test-only-value'},fetchImpl:async(_url,options)=>{bodies.push(JSON.parse(options.body));return new Response('RIFF-test');}});
+  for (const model of ['gpt-4o-mini-tts', 'tts-1', 'tts-1-hd']) await api.speech({text:'Sample.',model,voice:'alloy',generationSpeed:2.3,speed:4});
+  assert.equal(bodies.length,3);
+  for (const body of bodies) assert.equal(mode === 'direct' ? body.speed : body.generationSpeed,2.3);
+  for (const generationSpeed of [0,8,NaN,Infinity,'2.3']) await assert.rejects(api.speech({text:'Sample.',generationSpeed}),/Narration speed/);
+  assert.equal(bodies.length,3);
+ }
+});
+
+test('Options persists the preferred narration speed and rejects invalid edits', async () => {
+ const app=await setupOptions(),doc=app.dom.window.document;
+ const input=doc.querySelector('#generation-speed');
+ assert.equal(input.value,'2.3');
+ input.value='3.25';input.dispatchEvent(new app.dom.window.Event('change'));
+ await until(()=>app.stored.settings.generationSpeed===3.25);
+ input.value='8';input.dispatchEvent(new app.dom.window.Event('change'));
+ await tick();
+ assert.equal(app.stored.settings.generationSpeed,3.25);
+ assert.match(doc.querySelector('#saved').textContent,/0.75× to 4×/);
+ app.dom.window.close();
+});

@@ -61,7 +61,7 @@ export function createReaderServer({key = process.env.OPENAI_API_KEY || '', fetc
     if (req.url === '/health' && req.method === 'GET') return json(200, {configured: Boolean(key), running: true, mode: 'local', version: '0.2.0'});
     const alignment = req.url === '/v1/align';
     if ((!alignment && req.url !== '/v1/speech') || req.method !== 'POST') return json(404, {error: 'Not found.'});
-    if (!key) return json(503, {error: 'OpenAI is not connected yet. Choose “On-device” in Hermes settings to read now.'});
+    if (!key) return json(503, {error: 'OpenAI is not connected yet. Add your API key in Hermes Options or configure the local helper.'});
     if (!req.headers['content-type']?.startsWith('application/json')) return json(415, {error: 'JSON required.'});
     let body = '';
     try {
@@ -69,12 +69,13 @@ export function createReaderServer({key = process.env.OPENAI_API_KEY || '', fetc
     } catch { return; }
     let input; try { input = JSON.parse(body); } catch { return json(400, {error: 'Invalid JSON.'}); }
     if (!input || typeof input !== 'object') return json(400, {error: 'Invalid speech request.'});
-    const {text, voice = 'alloy', model = 'gpt-4o-mini-tts', instructions = ''} = input;
+    const {text, voice = 'alloy', model = 'gpt-4o-mini-tts', instructions = '', generationSpeed = 1} = input;
+    if (!Number.isFinite(generationSpeed) || generationSpeed < 0.75 || generationSpeed > 4) return json(400, {error: 'Narration speed must be between 0.75× and 4×.'});
     if (typeof text !== 'string' || !text.trim() || text.length > 4096) return json(400, {error: 'Send 1–4096 characters of text.'});
     if (typeof instructions !== 'string' || instructions.length > 1000) return json(400, {error: 'Pronunciation guidance must be at most 1000 characters.'});
     if (!models.has(model) || !voices.has(voice) || (model !== 'gpt-4o-mini-tts' && !legacy.has(voice))) return json(400, {error: 'Unsupported model or voice combination.'});
     const custom = model === 'gpt-4o-mini-tts' ? instructions.trim() : '';
-    const cacheKey = JSON.stringify([model, voice, text, custom]);
+    const cacheKey = JSON.stringify([model, voice, text, custom, generationSpeed]);
     trim();
     const cached = cache.get(cacheKey);
     const audio = (entry, hit) => { res.writeHead(200, {'Content-Type': 'audio/wav', 'Content-Length': entry.buffer.length, 'Cache-Control': 'no-store', 'X-Reader-Cache': hit ? 'hit' : 'miss'}); res.end(entry.buffer); };
@@ -101,7 +102,7 @@ export function createReaderServer({key = process.env.OPENAI_API_KEY || '', fetc
         requestBody.append('model', 'whisper-1'); requestBody.append('response_format', 'verbose_json');
         requestBody.append('timestamp_granularities[]', 'word');
       } else {
-        const speech = {model, voice, input: text, response_format: 'wav', speed: 1};
+        const speech = {model, voice, input: text, response_format: 'wav', speed: generationSpeed};
         if (model === 'gpt-4o-mini-tts') speech.instructions = speechInstructions + (custom ? '\nAdditional pronunciation and delivery guidance: ' + custom : '');
         requestBody = JSON.stringify(speech); headers['Content-Type'] = 'application/json';
       }
@@ -123,7 +124,7 @@ export function createReaderServer({key = process.env.OPENAI_API_KEY || '', fetc
         if (!res.destroyed) audio(entry, false);
       }
     } catch {
-      if (!res.destroyed) json(502, {error: controller.signal.aborted ? 'Speech request timed out. Try again or choose On-device.' : `Could not complete OpenAI ${alignment ? 'word timing' : 'speech'}. Check your connection and retry.`});
+      if (!res.destroyed) json(502, {error: controller.signal.aborted ? 'Speech request timed out. Check your connection and try again.' : `Could not complete OpenAI ${alignment ? 'word timing' : 'speech'}. Check your connection and retry.`});
     } finally { clearTimeout(timer); if (alignment) activeAlign--; else active--; }
   });
   server.on('close', () => { clearInterval(expiry); cache.clear(); cacheBytes = 0; });
@@ -137,6 +138,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   }
   const port = 43123;
   const server = createReaderServer({port, allowedExtensionIds: (process.env.READER_EXTENSION_IDS || '').split(',').filter(Boolean)});
-  server.listen(port, '127.0.0.1', () => console.log(`Hermes local speech bridge ready on 127.0.0.1:${port}. OpenAI ${process.env.OPENAI_API_KEY ? 'connected' : 'not configured; on-device voice remains available'}.`));
+  server.listen(port, '127.0.0.1', () => console.log(`Hermes local speech bridge ready on 127.0.0.1:${port}. OpenAI ${process.env.OPENAI_API_KEY ? 'connected' : 'not configured; API key required'}.`));
   server.on('error', error => { console.error(error.code === 'EADDRINUSE' ? 'Hermes is already running on port 43123.' : 'Could not start Hermes local service.'); process.exitCode = 1; });
 }

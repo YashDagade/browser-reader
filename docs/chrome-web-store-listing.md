@@ -1,6 +1,6 @@
 # Chrome Web Store submission
 
-**Target version: 0.6.0. Status: prepared, not yet submitted.** This API-only update adds optional encrypted credential storage and replaces the 0.4.0 package previously submitted on September 20, 2026. The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. Final submission and approval must be verified in the dashboard. The publisher's account address is intentionally absent from public source.
+**Target version: 0.7.0. Status: prepared, not yet submitted.** This API-only update adds a preferred narration speed (default 2.3×) and includes optional encrypted credential storage and replaces the 0.4.0 package previously submitted on September 20, 2026. The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. Final submission and approval must be verified in the dashboard. The publisher's account address is intentionally absent from public source.
 
 ## Listing fields
 
@@ -25,7 +25,7 @@ Connect your own OpenAI API key for expressive AI narration. All voices use Open
 
 Reading controls:
 
-- Adjust speed from 0.75× to 4×. The toolbar cycles common speeds; settings provide a slider.
+- Adjust playback from 0.75× to 4× without regenerating audio. Choose a default OpenAI narration speed in voice preferences (2.3× initially); changing that default can incur new speech requests.
 - Follow highlighted words, double-click a word to seek, and skip between passages.
 - Drag the player, drop it near an edge to dock, or collapse it while listening.
 - Let auto-scroll follow the narration, or scroll manually without immediately being pulled back.
@@ -82,7 +82,7 @@ Hermes has no login or subscription. Audio playback requires a reviewer-owned Op
 1. Install the extension in desktop Chrome and open a public article. Click Hermes. Before API setup, a **Connect OpenAI** prompt should appear; it opens Options. No system voice or speech request should start.
 2. In Options, select **Direct from Chrome**, supply a reviewer-owned OpenAI API key, read the disclosure, check consent, and click **Save connection**. Grant the optional OpenAI host permission. Leave **Remember on this device** unchecked to keep the key session-only, or enable it to save an encrypted copy that restores after Chrome restarts. The decryption key also lives in the same Chrome profile.
 3. Return to the article and click **Start reading**. The default is Alloy with OpenAI expressive (`gpt-4o-mini-tts`). Test play/pause/stop, passage skipping, highlighting, and double-click seeking on a non-link word.
-4. Cycle the toolbar speed button and use the 0.75×–4× slider. Speed-only changes must reuse audio without new speech requests. Drag near each edge to dock, then collapse and expand the reader.
+4. Cycle the toolbar speed button and use the 0.75×–4× slider. Toolbar/slider speed changes must reuse audio without new speech requests. Default narration speed in Voice & reading preferences changes the OpenAI generation parameter; changing it while playing can request new speech. Verify 2.3× generation plus 2.3× playback plays the recording at its original rate. Drag near each edge to dock, then collapse and expand the reader.
 5. Close Hermes, select a passage, and reopen it. Test pasted text through **Read your own text**. Pasted text has no page-word highlights.
 6. Test another OpenAI voice and optional voice instructions. Improved timing adds transcription requests; lightweight timing does not. No speech or alignment request may occur without consent.
 7. **Disconnect OpenAI** removes the direct key and permission and resets consent. Subsequent playback shows setup guidance and does not fall back to browser speech. Invalid API credentials produce an error, not a different voice.
@@ -105,6 +105,6 @@ The screenshot shows the earlier v0.4.0 player and word highlighting; v0.5.0 use
 
 ## Submission handoff
 
-Use the store ZIP with `manifest.json` at its root, not the general unpacked-install ZIP that contains an `extension` folder. Confirm its version is 0.6.0 and it contains only extension assets; no environment files, API keys, local helper, test credentials, or private material. Complete the store's listing, privacy, distribution, and reviewer fields in the publisher dashboard, then verify the resulting status there. Uploading a ZIP alone is not submission or approval.
+Use the store ZIP with `manifest.json` at its root, not the general unpacked-install ZIP that contains an `extension` folder. Confirm its version is 0.7.0 and it contains only extension assets; no environment files, API keys, local helper, test credentials, or private material. Complete the store's listing, privacy, distribution, and reviewer fields in the publisher dashboard, then verify the resulting status there. Uploading a ZIP alone is not submission or approval.
 
 This is a desktop Chrome release. Google's [compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en) says mobile devices cannot install Chrome extensions even in desktop mode. iPhone/iPad support would require a separate app or Safari extension port and its own distribution process.

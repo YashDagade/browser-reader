@@ -103,7 +103,7 @@ function harness({ withAlignment = false, persistentStore = null, cipher = sessi
     sessionId, tabId: 7,
     chunks: Array.from({ length: count }, (_, index) => ({ text: `Chunk ${index} has words.`, start: index * 4, end: index * 4 + 4 })),
     totalWords: count * 4,
-    settings: { speed: 1, voice: 'coral', model: 'gpt-4o-mini-tts' },
+    settings: { speed: 1, generationSpeed: 1, voice: 'coral', model: 'gpt-4o-mini-tts' },
   });
   return { command, requests, players, messages, revoked, resolve, load, alignments, timers, diskCache: context.HermesAudioCache,
     tick: () => { for (const callback of timers.values()) callback(); } };
@@ -466,4 +466,66 @@ test('speed changes while synthesis is pending neither abort nor regenerate it',
   await app.resolve(pending);
   assert.equal(app.players[0].playbackRate, 2.5);
   app.command('stop');
+});
+
+test('generated speed normalizes playback and remaining time without moving word timestamps or requesting more audio', async () => {
+  const app = harness({ withAlignment: true });
+  app.load(1);
+  app.command('settings', { settings: { speed: 2.3, generationSpeed: 2.3 } });
+  app.command('play');
+  assert.equal(app.requests[0].body.generationSpeed, 2.3);
+  await app.resolve();
+  const player = app.players[0];
+  assert.equal(player.playbackRate, 1);
+  assert.equal(player.preservesPitch, true);
+  assert.equal(app.command('snapshot').remainingSeconds, 4);
+  app.alignments[0].resolve({ words: [
+    {word:'Chunk', start:0, end:.4}, {word:'0', start:.5, end:1},
+    {word:'has', start:1.2, end:2}, {word:'words.', start:2.2, end:3.8},
+  ] });
+  await flush();
+  player.currentTime = 1.3;
+  app.tick();
+  assert.equal(app.command('snapshot').wordIndex, 2);
+  app.command('settings', { settings: { speed: 1 } });
+  assert.equal(player.playbackRate, 1 / 2.3);
+  assert.equal(player.currentTime, 1.3);
+  assert.equal(app.command('snapshot').wordIndex, 2);
+  assert.ok(Math.abs(app.command('snapshot').remainingSeconds - 2.7 * 2.3) < .001);
+  app.command('pause');
+  app.command('seek', { wordIndex: 2 });
+  app.command('play');
+  await flush();
+  assert.equal(app.players.at(-1).currentTime, 1.2);
+  assert.equal(app.players.at(-1).playbackRate, 1 / 2.3);
+  app.command('settings', { settings: { speed: 4 } });
+  assert.equal(app.players.at(-1).playbackRate, 4 / 2.3);
+  assert.equal(app.requests.length, 1);
+  assert.equal(app.alignments.length, 1);
+  app.command('stop');
+});
+
+test('changing generation speed replaces pending audio and resumes at the current word; paused changes stay free', async () => {
+  const app = harness();
+  app.load(1);
+  app.command('play');
+  await app.resolve();
+  app.players[0].currentTime = 2;
+  app.tick();
+  const word = app.command('snapshot').wordIndex;
+  app.command('settings', { settings: { generationSpeed: 2.3, speed: 2.3 } });
+  assert.equal(app.requests.length, 2);
+  assert.equal(app.requests[1].body.generationSpeed, 2.3);
+  assert.equal(app.players[0].src, '');
+  await app.resolve(app.requests[1]);
+  assert.equal(app.players.at(-1).playbackRate, 1);
+  assert.equal(app.command('snapshot').wordIndex, word);
+  app.command('pause');
+  app.command('settings', { settings: { generationSpeed: 4, speed: 4 } });
+  assert.equal(app.requests.length, 2);
+  assert.equal(app.command('snapshot').status, 'paused');
+  app.command('play');
+  assert.equal(app.requests[2].body.generationSpeed, 4);
+  app.command('stop');
+  await flush();
 });

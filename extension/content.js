@@ -1,6 +1,6 @@
 (() => {
   if (globalThis.__hermesReader) { globalThis.__hermesReader.open(); return; }
-  let article, ui, settings = {speed: 1.5, voice: 'alloy', model: 'gpt-4o-mini-tts', follow: true, instructions:'', syncMode:'precise'};
+  let article, ui, settings = {speed: 2.3, generationSpeed: 2.3, voice: 'alloy', model: 'gpt-4o-mini-tts', follow: true, instructions:'', syncMode:'precise'};
   let sessionId = null, state = {status:'ready',wordIndex:0}, lastWord=-1, closed=true;
   let lastScroll=0, manualScrollUntil=0;
   const scrollParents=new WeakMap();
@@ -103,6 +103,9 @@
     try {
       const stored=await chrome.runtime.sendMessage({target:'background',type:'preferences'});
       settings={...settings,...stored?.settings};
+      // A new reader starts at the preferred narration rate; toolbar adjustments
+      // affect the current reading session without replacing that default.
+      settings.speed=settings.generationSpeed;
       await load(ReaderExtract.extract({selectionOnly}));
     } catch(error) {
       article={title:document.title,words:[],chunks:[]};

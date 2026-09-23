@@ -1,5 +1,5 @@
 importScripts('credential-vault.js', 'session-data.js', 'speech-client.js');
-const DEFAULTS = {speed:1.5, voice:'alloy', model:'gpt-4o-mini-tts', follow:true, instructions:'', syncMode:'precise'};
+const DEFAULTS = {speed:2.3, generationSpeed:2.3, voice:'alloy', model:'gpt-4o-mini-tts', follow:true, instructions:'', syncMode:'precise'};
 const IDLE_ALARM = 'hermes-release-audio';
 let current = null, creating = null, saveAt = 0, lastStatus = '';
 let commandQueue = Promise.resolve();
@@ -9,6 +9,7 @@ function enqueue(operation) {const result=commandQueue.then(operation);commandQu
 function settingsOnly(value={}) {
   const result = {};
   if(Number.isFinite(Number(value.speed)))result.speed=clamp(Number(value.speed),.75,4);
+  if(typeof value.generationSpeed==='number' && Number.isFinite(value.generationSpeed))result.generationSpeed=clamp(value.generationSpeed,.75,4);
   if(value.model==='local')result.model=DEFAULTS.model;
   else if(['gpt-4o-mini-tts','tts-1','tts-1-hd'].includes(value.model))result.model=value.model;
   if(['alloy','cedar','nova','marin','coral','ash','sage','ballad','echo','fable','onyx','shimmer','verse'].includes(value.voice))result.voice=value.voice;

@@ -238,3 +238,15 @@ test('raw wheel and touch events cannot suspend auto-scroll', async t => {
   app.state({ status: 'playing', wordIndex: 4 });
   assert.equal(scrolls.length, 3);
 });
+
+test('opening a new reader starts at the saved generation speed rather than the previous playback adjustment', async t => {
+ const app=await harness(t);
+ assert.equal(app.commands.find(command=>command.action==='load').settings.speed,2.3);
+ app.views[0].onAction('close');
+ await flush();
+ app.setResponder(message=>message.type==='preferences'?{settings:{generationSpeed:3.25,speed:1}}:{ok:true,configured:true});
+ await app.window.__hermesReader.open();
+ const settings=app.commands.findLast(command=>command.action==='load').settings;
+ assert.equal(settings.generationSpeed,3.25);
+ assert.equal(settings.speed,3.25);
+});

@@ -246,3 +246,18 @@ test('key, cipher and private-setting routes reject content scripts and ordinary
  assert.equal(JSON.stringify((await app.message('audio-key-internal',{},internal)).cipher),JSON.stringify(first.cipher));
  assert.ok((await app.message('preferences',{},options)).settings);
 });
+
+test('preferred generation speed persists independently of playback speed and reaches the audio document', async () => {
+ const app=harness();
+ assert.equal((await app.message('preferences')).settings.generationSpeed,2.3);
+ await app.load();
+ await app.command('settings',{settings:{generationSpeed:3.25,speed:3.25}});
+ await app.command('play');
+ assert.equal(app.audio.find(m=>m.action==='load').settings.generationSpeed,3.25);
+ await app.command('settings',{settings:{speed:1}});
+ app.restartWorker();
+ const settings=(await app.message('preferences')).settings;
+ assert.equal(settings.generationSpeed,3.25);
+ assert.equal(settings.speed,1);
+ await app.command('stop');
+});

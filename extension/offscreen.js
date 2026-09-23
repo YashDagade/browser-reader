@@ -20,7 +20,7 @@
   let chunks = [];
   let totalWords = 0;
   let wordIndex = 0;
-  let settings = { speed: 1, voice: 'alloy', model: 'gpt-4o-mini-tts', instructions: '', syncMode: 'precise' };
+  let settings = { speed: 2.3, generationSpeed: 2.3, voice: 'alloy', model: 'gpt-4o-mini-tts', instructions: '', syncMode: 'precise' };
   let status = 'idle';
   let error = null;
   let wantsPlayback = false;
@@ -40,13 +40,13 @@
     let knownWords = 0, knownSeconds = 0;
     if (entry?.duration) {
       knownWords = chunk.end - wordIndex;
-      knownSeconds = Math.max(0, entry.duration - elapsed);
+      knownSeconds = Math.max(0, entry.duration - elapsed) * entry.payload.generationSpeed;
     }
     // The cache contains at most a few chunks; never walk the article per tick.
     for (const [key, upcoming] of cache) {
       if (key > index && upcoming.duration) {
         knownWords += chunks[key].end - chunks[key].start;
-        knownSeconds += upcoming.duration;
+        knownSeconds += upcoming.duration * upcoming.payload.generationSpeed;
       }
     }
     return Math.max(0, (knownSeconds + Math.max(0, totalWords - wordIndex - knownWords) * secondsPerWord) / settings.speed);
@@ -94,6 +94,11 @@
   function speed(value) {
     const number = Number(value);
     return Number.isFinite(number) ? Math.max(0.75, Math.min(4, number)) : settings.speed;
+  }
+
+  function playbackRate(entry = cache.get(currentChunk)) {
+    // Timings and currentTime remain in source-audio seconds at every speed.
+    return settings.speed / (entry?.payload.generationSpeed || settings.generationSpeed);
   }
 
   function abortError() {
@@ -250,7 +255,7 @@
     entry.timingSource = entry.alignedTimings ? 'aligned' : 'estimated';
     if (entry.alignedTimings) entry.alignmentPhase = 'ready';
     entry.url = URL.createObjectURL(entry.blob);
-    secondsPerWord = secondsPerWord * 0.65 + entry.duration / Math.max(1, chunks[entry.index].end - chunks[entry.index].start) * 0.35;
+    secondsPerWord = secondsPerWord * 0.65 + entry.duration * entry.payload.generationSpeed / Math.max(1, chunks[entry.index].end - chunks[entry.index].start) * 0.35;
     enforceByteBudget();
     if (cache.get(entry.index) !== entry) throw abortError();
     scheduleAlignment(entry, entry.index === chunkForWord(wordIndex));
@@ -308,7 +313,7 @@
         throw new Error('The speech request timed out. Check your connection and try again.');
       }
       if (cause instanceof TypeError) {
-        throw new Error('The speech connection is unavailable. Check settings, or choose the built-in voice.');
+        throw new Error('The speech connection is unavailable. Check your OpenAI connection in Hermes Options.');
       }
       throw cause;
     } finally {
@@ -350,7 +355,7 @@
     const chunk = chunks[index];
     entry = {
       index, generation, text: chunk.text,
-      payload: { text: chunk.text, voice: settings.voice, model: settings.model, instructions: settings.instructions },
+      payload: { text: chunk.text, voice: settings.voice, model: settings.model, instructions: settings.instructions, generationSpeed: settings.generationSpeed },
       phase: 'queued', url: null, blob: null, bytes: 0, duration: 0, timings: null,
     };
     entry.promise = new Promise((resolve, reject) => { entry.resolve = resolve; entry.reject = reject; });
@@ -430,7 +435,7 @@
       currentChunk = index;
       player.preload = 'auto';
       player.preservesPitch = true;
-      player.playbackRate = settings.speed;
+      player.playbackRate = playbackRate(entry);
       player.onended = () => {
         if (audio !== player || !wantsPlayback) return;
         if (index + 1 >= chunks.length) {
@@ -486,7 +491,7 @@
     if (audio && status === 'paused' && audio.readyState >= 1) {
       const player = audio;
       const thisOperation = operation;
-      player.playbackRate = settings.speed;
+      player.playbackRate = playbackRate();
       player.play().then(() => {
         if (!wantsPlayback || audio !== player || operation !== thisOperation) {
           if (audio !== player || !wantsPlayback) player.pause();
@@ -554,15 +559,18 @@
     const changedVoice = next.voice !== undefined && next.voice !== settings.voice;
     const changedModel = next.model !== undefined && next.model !== settings.model;
     const changedInstructions = next.instructions !== undefined && next.instructions !== settings.instructions;
+    const generationSpeed = Number.isFinite(next.generationSpeed) ? Math.max(0.75, Math.min(4, next.generationSpeed)) : settings.generationSpeed;
+    const changedGenerationSpeed = generationSpeed !== settings.generationSpeed;
     const oldSyncMode = settings.syncMode;
     settings = {
       speed: next.speed === undefined ? settings.speed : speed(next.speed),
+      generationSpeed,
       voice: typeof next.voice === 'string' && next.voice ? next.voice : settings.voice,
       model: ['gpt-4o-mini-tts','tts-1','tts-1-hd'].includes(next.model) ? next.model : settings.model,
       instructions: typeof next.instructions === 'string' ? next.instructions.slice(0, 1500) : settings.instructions,
       syncMode: next.syncMode === 'estimated' ? 'estimated' : next.syncMode === 'precise' ? 'precise' : settings.syncMode,
     };
-    if (changedVoice || changedModel || changedInstructions) {
+    if (changedVoice || changedModel || changedInstructions || changedGenerationSpeed) {
       operation += 1;
       destroyAudio();
       clearCache();
@@ -577,7 +585,7 @@
           else scheduleAlignment(entry, entry.index === currentChunk);
         }
       }
-      if (audio) audio.playbackRate = settings.speed;
+      if (audio) audio.playbackRate = playbackRate();
       publish();
     }
   }

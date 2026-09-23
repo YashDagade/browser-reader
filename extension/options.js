@@ -23,6 +23,7 @@ async function initialize() {
   const [{settings = {}}, {connection}] = await Promise.all([background('preferences'), background('connection-manage', {action: 'get'})]);
   model.value = ['gpt-4o-mini-tts','tts-1','tts-1-hd'].includes(settings.model) ? settings.model : 'gpt-4o-mini-tts'; voice.value = settings.voice || 'alloy';
   $('#instructions').value = settings.instructions || ''; $('#sync-mode').value = settings.syncMode || 'precise';
+  $('#generation-speed').value = settings.generationSpeed ?? 2.3;
   mode.value = connection.mode; $('#forget').hidden = !connection.hasKey && !connection.consent && !connection.rememberKey;
   $('#remember-key').checked = connection.rememberKey === true;
   $('#cloud-consent').checked = connection.consent === true;
@@ -30,12 +31,18 @@ async function initialize() {
 }
 async function savePreferences() {
   voiceOptions();
+  const generationSpeed = $('#generation-speed').valueAsNumber;
+  if (!Number.isFinite(generationSpeed) || !$('#generation-speed').checkValidity()) {
+    $('#generation-speed').reportValidity();
+    $('#saved').textContent = 'Choose a narration speed from 0.75× to 4×.';
+    return;
+  }
   try {
-    await background('preferences-save', {settings: {model: model.value, voice: voice.value, instructions: $('#instructions').value.trim().slice(0, 1000), syncMode: $('#sync-mode').value}});
+    await background('preferences-save', {settings: {model: model.value, voice: voice.value, generationSpeed, instructions: $('#instructions').value.trim().slice(0, 1000), syncMode: $('#sync-mode').value}});
     $('#saved').textContent = 'Saved. Applies the next time you open a reader. Custom guidance lasts until Chrome quits.';
   } catch (error) { $('#saved').textContent = error.message; }
 }
-for (const element of [model, voice, $('#instructions'), $('#sync-mode')]) element.addEventListener('change', savePreferences);
+for (const element of [model, voice, $('#generation-speed'), $('#instructions'), $('#sync-mode')]) element.addEventListener('change', savePreferences);
 mode.addEventListener('change', connectionFields);
 $('#key-file').addEventListener('change', async event => {
   importedKey = ''; const file = event.target.files?.[0];

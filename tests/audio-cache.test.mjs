@@ -27,10 +27,13 @@ test('speech keys ignore speed, follow, layout, sync and credentials while disti
   const key = await cache.keyFor(payload);
   assert.match(key, /^[a-f0-9]{64}$/);
   assert.equal(await cache.keyFor({ ...payload, speed: 4, follow: false, syncMode: 'estimated', layout: 'left', apiKey: 'example-only' }), key);
-  for (const change of [{ text: 'Another passage.' }, { voice: 'nova' }, { model: 'tts-1' }, { instructions: 'Biology article.' }]) {
+  for (const change of [{ text: 'Another passage.' }, { voice: 'nova' }, { model: 'tts-1' }, { instructions: 'Biology article.' }, { generationSpeed: 2.3 }]) {
     assert.notEqual(await cache.keyFor({ ...payload, ...change }), key);
   }
   assert.equal(await cache.keyFor({ ...payload, instructions: ' Physics article. ' }), key);
+  assert.equal(await cache.keyFor({ ...payload, generationSpeed: 1 }), key);
+  assert.equal(await cache.keyFor({ ...payload, generationSpeed: 2.3, speed: 1 }),
+    await cache.keyFor({ ...payload, generationSpeed: 2.3, speed: 4 }));
   assert.equal(await cache.keyFor({ ...payload, model: 'tts-1', instructions: 'One' }),
     await cache.keyFor({ ...payload, model: 'tts-1', instructions: 'Two' }));
 });

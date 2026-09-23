@@ -84,7 +84,7 @@
         .field-label { color: #d1d1d3; font-size: 15px; display: block; }
         .speed-output { font-size: 18px; color: #f4eee0; font-weight: 500; font-variant-numeric: tabular-nums; }
         .speed-slider { margin-bottom: 18px !important; }
-        select { width: 100%; display: block; margin-top: 7px; min-height: 44px; padding: 9px 11px; border: 1px solid #4b4c50; border-radius: 11px; color: #efeff0; background: #292a2d; font-size: 16px; }
+        select, input[type=number] { width: 100%; display: block; margin-top: 7px; min-height: 44px; padding: 9px 11px; border: 1px solid #4b4c50; border-radius: 11px; color: #efeff0; background: #292a2d; font-size: 16px; }
         .follow { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; margin-top: 8px; cursor: pointer; }
         .follow input { accent-color: #ded1b3; width: 19px; height: 19px; margin: 0; }
         .hint { color: #aaabae; font-size: 14px; line-height: 1.5; margin: 8px 0 0; }
@@ -124,6 +124,10 @@
           <p class="hint timing-hint"></p>
           <details class="advanced">
             <summary>Voice &amp; reading preferences</summary>
+            <label class="field-label" for="reader-generation-speed">Default narration speed (×)
+              <input id="reader-generation-speed" type="number" min="0.75" max="4" step="0.05" value="2.3" aria-describedby="reader-generation-speed-help">
+            </label>
+            <p class="hint" id="reader-generation-speed-help">OpenAI generates at this speed; new articles start here. Changes apply when you leave this field and may generate new audio. The reading-speed slider reuses audio at no extra cost.</p>
             <label class="field-label" for="reader-model">Voice engine
               <select id="reader-model">
                 <option value="gpt-4o-mini-tts">OpenAI · expressive</option>
@@ -173,13 +177,13 @@
       reader: get('.reader'), bar: get('.bar'), orb: get('.orb'), title: get('.title'), time: get('.time'), progress: get('.progress'), primary: get('.primary'),
       drawer: get('.drawer'), speed: get('#reader-speed'), speedOutput: get('.speed-output'),
       speedToggle: get('.speed-toggle'), settingsToggle: get('.settings-toggle'),
-      voice: get('#reader-voice'), voiceField: get('.voice-field'), model: get('#reader-model'),
+      voice: get('#reader-voice'), voiceField: get('.voice-field'), model: get('#reader-model'), generationSpeed: get('#reader-generation-speed'),
       follow: get('#reader-follow'), sync: get('#reader-sync'), syncHelp: get('#reader-sync-help'), instructions: get('#reader-instructions'), instructionsHelp: get('#reader-instructions-help'), promptCount: get('.prompt-count'),
       notice: get('.notice'), noticeMessage: get('.notice-message'), connect: get('.connect'), live: get('.live-status'), previous: get('.previous'), next: get('.next'), stop: get('.stop'), hint: get('.timing-hint'),
       pasteToggle: get('.paste-toggle'), paste: get('#reader-paste'), text: get('#reader-text'), pasteAction: get('.paste-action'),
     };
     let state = {
-      title, totalWords, wordIndex: 0, status: 'ready', speed: 1, voice: 'alloy', instructions: '', syncMode: 'precise',
+      title, totalWords, wordIndex: 0, status: 'ready', speed: 2.3, generationSpeed: 2.3, voice: 'alloy', instructions: '', syncMode: 'precise',
       model: 'gpt-4o-mini-tts', follow: true, connected: undefined, error: '', ...settings,
     };
     let layout = { dock: 'free', collapsed: false, ...settings.layout };
@@ -279,6 +283,7 @@
       elements.instructions.disabled = state.model !== 'gpt-4o-mini-tts';
       // Do not overwrite an in-progress edit when playback publishes new words.
       if (root.activeElement !== elements.instructions) elements.instructions.value = String(state.instructions || '').slice(0, 1000);
+      if (root.activeElement !== elements.generationSpeed) elements.generationSpeed.value = String(state.generationSpeed);
       elements.promptCount.textContent = `${elements.instructions.value.length} / 1000`;
       elements.instructionsHelp.textContent = state.model === 'gpt-4o-mini-tts'
         ? 'Add subject, pronunciation, or delivery guidance. Hermes still reads the source verbatim. Saved when you leave this field.'
@@ -287,6 +292,7 @@
 
     function render() {
       state.speed = clamp(number(state.speed, 1), 0.75, 4);
+      state.generationSpeed = clamp(number(state.generationSpeed, 2.3), 0.75, 4);
       state.model = ['gpt-4o-mini-tts','tts-1','tts-1-hd'].includes(state.model) ? state.model : 'gpt-4o-mini-tts';
       const playing = state.status === 'playing', loading = state.status === 'loading';
       const active = playing || loading || state.status === 'paused';
@@ -430,6 +436,14 @@
     listen(get('.drawer-dismiss'), 'click', () => { setDrawer(false); elements.settingsToggle.focus(); });
     listen(get('.advanced'), 'toggle', () => { if (drawerOpen) panelPosition(); });
     listen(elements.speed, 'input', () => changeSettings({ speed: Number(elements.speed.value) }));
+    listen(elements.generationSpeed, 'change', () => {
+      const value = elements.generationSpeed.valueAsNumber;
+      if (!Number.isFinite(value) || !elements.generationSpeed.checkValidity()) {
+        elements.generationSpeed.reportValidity();
+        return;
+      }
+      if (value !== state.generationSpeed) changeSettings({ generationSpeed: value, speed: value });
+    });
     listen(elements.model, 'change', () => {
       const model = elements.model.value;
       const changes = { model };
