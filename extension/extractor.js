@@ -219,6 +219,6 @@
     return { title: heading || doc.title || 'Untitled article', lang: doc.documentElement.lang || 'en', words, chunks: makeChunks(words), source: selectedRange ? 'selection' : 'article' };
   }
 
-  global.ReaderExtract = { extract, fromText };
+  global.ReaderExtract = { extract, fromText, makeChunks };
   if (typeof module !== 'undefined' && module.exports) module.exports = global.ReaderExtract;
 })(typeof window !== 'undefined' ? window : globalThis);

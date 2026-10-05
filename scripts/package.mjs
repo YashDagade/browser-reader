@@ -5,13 +5,14 @@ import {execFileSync} from 'node:child_process';
 const root = path.resolve(import.meta.dirname, '..');
 const allowed = new Set(['.js','.mjs','.html','.css','.png']);
 const secrets = [/\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{32,}/,/\bgh[pousr]_[A-Za-z0-9]{30,}/,/\bgithub_pat_[A-Za-z0-9_]{40,}/,/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/];
+const pdfAssets=/^extension\/vendor\/pdfjs\/(?:LICENSE\.txt|cmaps\/(?:LICENSE|[A-Za-z0-9_-]+\.bcmap)|standard_fonts\/(?:LICENSE_[A-Z]+|[A-Za-z0-9_-]+\.(?:pfb|ttf))|wasm\/LICENSE_[A-Z0-9_]+)$/;
 const files=[];
 function visit(directory) {
   for(const entry of fs.readdirSync(path.join(root,directory),{withFileTypes:true})) {
     const name=path.join(directory,entry.name);
     if(entry.isSymbolicLink())throw Error(`Refusing symlink: ${name}`);
     if(entry.isDirectory())visit(name);
-    else if(entry.name==='manifest.json'||name==='extension/vendor/pdfjs/LICENSE.txt'||allowed.has(path.extname(entry.name)))files.push(name);
+    else if(entry.name==='manifest.json'||pdfAssets.test(name)||allowed.has(path.extname(entry.name)))files.push(name);
     else throw Error(`Unexpected extension asset: ${name}`);
   }
 }

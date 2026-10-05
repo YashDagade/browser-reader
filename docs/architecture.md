@@ -13,7 +13,7 @@ flowchart LR
     Helper --> API
     Audio --> Player[Player and word highlights]
     PDF[PDF file] --> Parser[Bundled local PDF.js worker]
-    Parser --> View[Hermes PDF text view]
+    Parser --> View[Original-page PDF view]
     View --> Extract
 ```
 
@@ -22,7 +22,7 @@ flowchart LR
 | File | Responsibility |
 | --- | --- |
 | `extension/manifest.json` | On-demand tab access, local helper permission, optional OpenAI permission |
-| `extension/pdf.html`, `pdf.js`, `pdf-text.mjs` | On-demand PDF import, local text layout and cleaning, and a reflowed reading view |
+| `extension/pdf.html`, `pdf.js`, `pdf-text.mjs`, `pdf-narration.mjs`, `pdf-view.mjs` | On-demand PDF import, local text layout and citation filtering, original-page rendering, and source-coordinate highlighting |
 | `extension/extractor.js` | Article scoring, noise filtering, DOM word ranges, and chunking |
 | `extension/content.js` | Page session, keyboard controls, word seeking, and CSS highlights |
 | `extension/ui.js` | Draggable, dockable, collapsible player isolated in a Shadow DOM |
@@ -86,32 +86,10 @@ The optional helper caches up to **16 MiB** of audio, keyed by model, voice, tex
 
 The toolbar recognizes `.pdf` and arXiv `/pdf/` URLs before trying content-script injection, and probes ordinary pages for PDF MIME types or embedded viewers. It opens an extension-owned `pdf.html` tab, which fetches the source using the temporary active-tab host grant. No broad host permission is added. Keep the original tab open during fetch. Restricted hosts, redirects, extensionless URLs Chrome refuses to probe, and local files have an explicit file-picker fallback in Options.
 
-PDF.js 6.4.299 is bundled as the legacy parser and worker with its license. It is dynamically loaded only by the PDF reader, with evaluation, WASM, and font rendering disabled. The parser extracts text sequentially, cleans repeated margin text and typesetting hyphens, estimates common column order, and destroys the worker after extraction or failure. Limits are 50 MiB, 500 pages, and two million extracted characters. No page canvases or OCR models are allocated; source bytes are not persisted. Complex document layout remains heuristic.
+PDF.js 6.4.299 is bundled with its worker, CMaps, fallback fonts, non-WASM image decoders, and upstream licenses. These load only in the PDF reader. Evaluation, XFA, and WASM remain disabled. Text is extracted sequentially, repeated margins and typesetting hyphens are cleaned, and common column order is estimated. The live document worker is retained for page rendering and destroyed on replacement, failure, or page exit. Limits are 50 MiB, 500 pages, and two million extracted characters; source bytes are not persisted.
 
-The view creates DOM paragraphs with `textContent`, then uses the same extractor, UI, and content controller as ordinary articles. Runtime messages carry the reader tab ID; the service worker checks it against the sender document and tab in Chrome’s trusted extension-context inventory when Chrome omits `sender.tab`. Playback events are addressed to that reader tab and session. The PDF page cannot retrieve API credentials through the internal connection routes. Closing or replacing the PDF stops the old session.
+The visual and narration layers are separate. Canvas rendering preserves the PDF's original figures, tables, and typography. PDF.js TextLayer supplies selectable source text. `pdf-narration.mjs` masks citations while preserving offsets, removes linked superscript footnote markers at extraction, optionally filters footnotes/captions/references, and translates recognized boolean comparison tables into rows with column labels and yes/no values. Every spoken token carries source item and character coordinates, including words joined across line-end hyphens and normalized ligatures. No model is used to rewrite the paper. These filters are heuristic; complex tables, equations, and atypical layouts can still read imperfectly.
 
-Global Chrome commands adjust effective playback by 0.05×, clamped to 0.75×–7×. The toolbar uses smaller presets and Shift-click to decrease. Generation remains capped at 4×. Ordinary speed adjustments change only `playbackRate`, preserving the audio cache key, source timestamps, and voice.
+`pdf-view.mjs` mounts at most three nearby pages, each canvas capped near three million pixels. Off-screen canvases and text layers are cancelled and released; source coordinates remain available for seeking and follow-scroll before the page renders. Text ranges produce highlight rectangles on rendered pages. A viewport-transform fallback supports off-screen scrolling. The canvas working set is about 36 MB maximum, excluding document data, decoded images, fonts, text, and browser overhead.
 
-## Credentials and request boundaries
-
-**Consent:** the Options disclosure explains that OpenAI receives narration text, limited prefetched text, applicable voice guidance, and generated audio when improved timing is enabled. An explicit checkbox records the user's agreement. The speech client checks consent at the request boundary before speech or alignment requests in both direct and local-helper modes. Trusted-event guards reject webpage-generated synthetic actions that could trigger paid reading controls.
-
-**Direct mode:** a deliberate Save connection action requests optional access to `https://api.openai.com/*`. The API key and custom voice guidance use `chrome.storage.session`. With **Remember on this device** enabled, a separate `hermes-credentials` IndexedDB database stores one encrypted API credential and its non-exportable AES-256-GCM CryptoKey. A single transaction atomically replaces the pair; each save generates a fresh 256-bit key and 96-bit IV with version-bound authenticated data. Only ciphertext and the CryptoKey handle are persisted, never the plaintext API key. Restore decrypts into session storage only for an explicitly remembered, consented direct connection. Session-only mode remains the default; guidance is always session-only. No Chrome Sync is used.
-
-**Protection limit:** the decryption key is stored in the same browser profile to allow automatic access. Non-exportability prevents Web Crypto key export; it is not an OS keychain or a guarantee against a compromised or copied profile. The settings and privacy policy disclose this. No native helper, permission, server, or dependency was added. Storage failures never silently fall back to plaintext. Corrupted or missing credentials show reconnect guidance. Serialized save/restore/forget operations prevent a late restore from undoing a disconnect. Disconnect revokes consent even if deletion fails and offers a retry. Unchecking Remember or choosing the local helper deletes the persistent credential. Storage access is restricted to trusted extension contexts; content scripts receive settings and status rather than API credentials. The offscreen document obtains connection details through a sender-checked internal message. Importing an environment file reads it locally without uploading the file. Forgetting the key also removes the optional permission. A ready configuration is not proof of a valid key; OpenAI validates it on a real request.
-
-Initialization migrates any key or custom guidance left by older versions into session storage and removes those fields from persistent local storage. Nonsecret connection mode and consent remain persistent preferences.
-
-**Local helper:** Node reads `OPENAI_API_KEY` from the environment or a private environment file. The key stays outside Chrome. The service binds to `127.0.0.1:43123`, validates Host and the custom client header, and rejects non-extension browser origins. `READER_EXTENSION_IDS` optionally limits allowed extension IDs; otherwise Chrome extension origins are permitted. Local programs remain within the trusted-machine boundary. Node 22+ is needed only for this optional helper and repository development.
-
-OpenAI receives narration text, limited prefetched text, and applicable voice guidance; improved timing additionally sends generated audio. Requests use fixed HTTPS OpenAI API endpoints. Hermes does not send page HTML, cookies, or article title/URL as API metadata, although narrated text may itself contain URLs or sensitive information. The expressive model is instructed to treat page text as content to read, not commands. No reasoning model processes the article first.
-
-The encrypted audio database is local to the extension's Chrome profile and is not synced. Its session-only key protects saved narration at rest while allowing reuse after the reader closes. Decrypted audio exists in memory during use. Forgetting an API key, clearing encrypted audio, and deleting an optional helper environment file are separate actions.
-
-The extension sends no reading data or credentials to its developer. There is no developer account system, telemetry, advertising, or browsing-history log. All runtime JavaScript is bundled; API responses are audio and data, never remotely executed code. The full data-flow and retention notice is in [PRIVACY.md](../PRIVACY.md).
-
-Both paths bound response sizes and sanitize upstream errors. The helper additionally validates input and applies concurrency, character-rate, and timeout limits. These controls are not a billing cap, and canceled requests may already have incurred usage. Environment and common credential files are excluded from Git; no API key is bundled in the extension package.
-
-## Validation
-
-`npm test` exercises extraction, controls, settings, timing, audio lifecycle, and helper behavior with mocked speech responses. `npm run check` checks JavaScript syntax and extension assets; `npm run check:secrets` scans tracked files for common credential patterns without printing secret values. `npm run package` scans the exact packaged bytes, including untracked assets, and produces both an unpacked-install ZIP and a Chrome Web Store ZIP with `manifest.json` at its root. Real Chrome checks remain necessary for permissions, installed voices, audio output, and website layouts.
+The PDF adapter feeds chunks into the shared player without sending its coordinate data to the background. Filter changes retain the current source word when it survives filtering. Runtime messages carry the reader tab ID; the service worker checks it against the sender document and tab in Chrome's trusted extension-context inventory when Chrome omits `sender.tab`. Playback events are addressed to that reader tab and session. The PDF page cannot retrieve API credentials through the internal connection routes. Closing or replacing the PDF stops the old session.

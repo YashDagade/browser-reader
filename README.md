@@ -13,7 +13,7 @@ Click **Start reading**, follow the highlighted words, and change speed from **0
 
 ## Install and listen
 
-Requires **desktop Chrome 116+**. Version **0.8.0 adds PDF reading, 0.05× speed shortcuts, and playback up to 7×**. Your OpenAI model, voice, 2.3× narration default, and optional encrypted credential storage are preserved. All narration requires OpenAI. The previous 0.4.0 package was submitted for review; this update has not been submitted. Install the unpacked extension below. Chrome extensions do not run on iPhone or iPad, even in desktop mode; a Safari version would require a separate port. See [Google's device compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en).
+Requires **desktop Chrome 116+**. Version **0.9.0 displays original PDF pages, including figures and tables, with citation-aware narration**. The 0.05× speed shortcuts and playback up to 7× remain available. Your OpenAI model, voice, 2.3× narration default, and optional encrypted credential storage are preserved. All narration requires OpenAI. The previous 0.4.0 package was submitted for review; this update has not been submitted. Install the unpacked extension below. Chrome extensions do not run on iPhone or iPad, even in desktop mode; a Safari version would require a separate port. See [Google's device compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en).
 
 1. [Download `hermes-extension.zip`](https://github.com/YashDagade/browser-reader/releases/latest/download/hermes-extension.zip) and extract it to a folder you will keep.
 2. Open `chrome://extensions` and enable **Developer mode**.
@@ -82,11 +82,21 @@ Dropping near the left or right edge makes the toolbar vertical; top and bottom 
 
 ## PDFs
 
-Click Hermes while viewing a PDF, including arXiv `/pdf/` links. Hermes opens a separate **PDF reader** tab, extracts selectable text locally, and displays it with the same OpenAI player, word highlighting, double-click seeking, and auto-scroll. Keep the original tab open until extraction finishes. Choose a page in the sticky header, then **Read from this page** to begin there. Opening the document does not start a speech request.
+Click Hermes while viewing a PDF, including arXiv `/pdf/` links. Hermes opens a separate **PDF reader** showing the original pages: figures, diagrams, tables, equations, and typography stay in place. Keep the original tab open until the file finishes loading. Use the page selector or arrows, then **Read from here** to begin there. Opening the document does not start a speech request.
 
-For downloaded PDFs, or if a site blocks direct access, open Hermes **Options → Open a PDF in Hermes**, then choose **Open PDF** and select the file. No file-access permission, upload service, OCR model, or Node process is needed. The PDF itself stays on your device; only narration passages go to OpenAI after you press Play with consent.
+Words are highlighted on the printed page as narration advances. Double-click a word to seek; ordinary clicks select text. The player follows the spoken word across pages. The zoom menu offers fit-width and 100–200% views.
 
-The bundled PDF.js parser loads only in the PDF reader and its worker is released after extraction. The reader removes repeated margin headers and page numbers, joins line-break hyphenation, and handles common two-column layouts. Text is reflowed rather than drawn over the original PDF. Scanned pages need OCR first; complex tables, equations, uncommon fonts, and unusual layouts may still read imperfectly. Limits: 50 MiB, 500 pages, and two million extracted characters. Password-protected PDFs need an unlocked copy. Web PDFs with unrecognized URLs can still be downloaded and opened manually.
+**Narration** in the header controls what is spoken:
+
+- Skip numeric citations such as `[14]`, `[15–17]`, and parenthetical author–year citations by default. They remain visible on the PDF.
+- Include figure and table captions by default. Recognizable comparison tables read their row and column labels with **yes/no** for checkmarks and crosses.
+- Exclude small bottom-of-page footnotes and the bibliography by default; switch either on when wanted. Linked superscript footnote markers are skipped.
+
+Filtering happens locally, without an extra AI call or rewriting the paper. Changing these filters changes the narration text and may require generating different audio; changing playback speed still reuses audio. Citation detection, columns, footnotes, and table reading use heuristics. Unusual references, mathematical notation, diagrams, or complex numeric tables can still read imperfectly. Inspect the original page when precision matters. Scanned pages are displayed but need OCR before narration; Hermes does not provide OCR.
+
+For downloaded PDFs, or if a site blocks direct access, open Hermes **Options → Open a PDF in Hermes**, then choose **Open PDF** and select the file. No file-access permission, upload service, or Node process is needed. The PDF itself stays on your device; only narration passages go to OpenAI after you press Play with consent.
+
+PDF.js loads only in this reader. At most three nearby pages retain canvases, capped at about three million pixels each. Those canvas buffers total about 36 MB; the document, images, fonts, text, and browser add memory beyond that. The document worker stays alive while the PDF is open and is released on close or replacement. Limits: 50 MiB, 500 pages, and two million extracted characters. Password-protected PDFs need an unlocked copy. Web PDFs with unrecognized URLs can still be downloaded and opened manually.
 
 ## Privacy and limits
 
@@ -118,7 +128,7 @@ npm run check:secrets
 npm run package
 ```
 
-Plain JavaScript, HTML, and CSS; `jsdom` is development-only. PDF.js 6.4.299 is vendored under its Apache-2.0 license; `npm run vendor:pdf` reproduces the bundled parser and worker from the pinned dependency. Tests compare the vendored files to that dependency. Mocked tests spend no API credits. Packaging checks the exact files for credential patterns and writes `output/hermes-extension.zip` for unpacked installs and `output/hermes-chrome-web-store.zip` with a root manifest for store submission. See the [submission draft and assets](docs/chrome-web-store-listing.md). See [the architecture notes](docs/architecture.md). Reproducible contributions are welcome; keep private content and credentials out of issues.
+Plain JavaScript, HTML, and CSS; `jsdom` is development-only. PDF.js 6.4.299 is vendored under its Apache-2.0 license; `npm run vendor:pdf` reproduces the bundled renderer, worker, fonts, CMaps, and image decoders from the pinned dependency. Tests compare the vendored files to that dependency. Mocked tests spend no API credits. Packaging checks the exact files for credential patterns and writes `output/hermes-extension.zip` for unpacked installs and `output/hermes-chrome-web-store.zip` with a root manifest for store submission. See the [submission draft and assets](docs/chrome-web-store-listing.md). See [the architecture notes](docs/architecture.md). Reproducible contributions are welcome; keep private content and credentials out of issues.
 
 Hermes is licensed under [MIT](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md) for PDF.js.
 

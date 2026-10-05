@@ -5,7 +5,7 @@ for(const directory of ['extension','server','scripts'])for(const file of fs.rea
   if(/\.(js|mjs)$/.test(file))execFileSync(process.execPath,['--check',path.join(directory,file)],{stdio:'inherit'});
 }
 const manifest=JSON.parse(fs.readFileSync('extension/manifest.json','utf8'));
-for(const file of [manifest.background.service_worker,manifest.options_page,...Object.values(manifest.icons),'extractor.js','ui.js','content.js','offscreen.html','offscreen.js','speech-client.js','timing.js','audio-cache.js','session-data.js','credential-vault.js','pdf.html','pdf.js','pdf-text.mjs','pdf.css','vendor/pdfjs/pdf.min.mjs','vendor/pdfjs/pdf.worker.min.mjs','vendor/pdfjs/LICENSE.txt']){
+for(const file of [manifest.background.service_worker,manifest.options_page,...Object.values(manifest.icons),'extractor.js','ui.js','content.js','offscreen.html','offscreen.js','speech-client.js','timing.js','audio-cache.js','session-data.js','credential-vault.js','pdf.html','pdf.js','pdf-text.mjs','pdf-narration.mjs','pdf-view.mjs','pdf.css','vendor/pdfjs/pdf.min.mjs','vendor/pdfjs/pdf.worker.min.mjs','vendor/pdfjs/LICENSE.txt']){
   if(!fs.existsSync(path.join('extension',file)))throw Error(`Missing extension file: ${file}`);
 }
 if(manifest.host_permissions.some(p=>p.includes('<all_urls>')))throw Error('Unexpected broad host permission.');

@@ -59,3 +59,9 @@ test('PDF limits, scanned documents, cancellation, and parser errors always rele
   await assert.rejects(readPDF({byteLength:51*1024*1024},{getDocument:parser(1)}),/50 MiB/);assert.equal(destroyed,3);
   await assert.rejects(readPDF(new Uint8Array(1),{getDocument:()=>({promise:Promise.reject(Error('Malformed PDF')),destroy:async()=>{destroyed++;}})}),/Malformed PDF/);assert.equal(destroyed,4);
 });
+
+test('font, CMap, and image decoder fallbacks are pinned local assets with their upstream licenses',async()=>{
+ for(const name of ['cmaps/Adobe-Japan1-UCS2.bcmap','cmaps/LICENSE','standard_fonts/FoxitSerif.pfb','standard_fonts/LiberationSans-Regular.ttf','standard_fonts/LICENSE_FOXIT','standard_fonts/LICENSE_LIBERATION','wasm/jbig2_nowasm_fallback.js','wasm/openjpeg_nowasm_fallback.js','wasm/LICENSE_JBIG2','wasm/LICENSE_OPENJPEG']){
+  assert.deepEqual(await readFile(new URL('../extension/vendor/pdfjs/'+name,import.meta.url)),await readFile(new URL('../node_modules/pdfjs-dist/'+name,import.meta.url)),name);
+ }
+});

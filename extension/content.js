@@ -32,6 +32,7 @@
     return result;
   }
   function clearHighlight() {
+    if(pdfReader)globalThis.HermesPDF?.clear();
     globalThis.CSS?.highlights?.delete('hermes-word');
     globalThis.CSS?.highlights?.delete('hermes-context');
     lastWord=-1;
@@ -60,7 +61,7 @@
       }
     }
     const rect=range.getBoundingClientRect();
-    let top=60, bottom=innerHeight*.75;
+    let top=pdfReader?Math.max(60,document.querySelector('header')?.getBoundingClientRect().bottom+16||60):60, bottom=innerHeight*.75;
     const widget=ui?.host.getBoundingClientRect();
     if(widget&&widget.width<innerWidth&&widget.left<rect.right&&widget.right>rect.left) {
       if(widget.top>innerHeight*.5)bottom=Math.min(bottom,widget.top-24);
@@ -72,6 +73,7 @@
   }
   function highlight(index,force=false) {
     if(!article||document.hidden)return;
+    if(pdfReader&&article.source==='pdf'&&globalThis.HermesPDF){const range=HermesPDF.highlight(index);if(range)followWord(range,force);return;}
     const range=article.words[index]?.range;
     if(!range?.startContainer?.isConnected)return;
     if(index!==lastWord||force) {
@@ -109,7 +111,7 @@
       // A new reader starts at the preferred narration rate; toolbar adjustments
       // affect the current reading session without replacing that default.
       settings.speed=settings.generationSpeed;
-      await load(ReaderExtract.extract({selectionOnly}));
+      await load(pdfReader&&globalThis.HermesPDF?HermesPDF.extract():ReaderExtract.extract({selectionOnly}));
     } catch(error) {
       article={title:document.title,words:[],chunks:[]};
       ui?.destroy();ui=ReaderUI.create({title:document.title,totalWords:0,settings,onAction});closed=false;
@@ -149,6 +151,7 @@
     }
   });
   document.addEventListener('dblclick',event=>{
+    if(pdfReader&&globalThis.HermesPDF)return;
     if(!event.isTrusted || closed || !article || event.defaultPrevented || event.button!==0 || event.metaKey || event.ctrlKey) return;
     if(event.composedPath().includes(ui?.host) || event.target.closest?.('a,button,input,textarea,select,[contenteditable=true]')) return;
     const point=document.caretRangeFromPoint?.(event.clientX,event.clientY);
@@ -175,7 +178,17 @@
   document.addEventListener('visibilitychange',event=>{if(event.isTrusted&&!document.hidden&&!closed){lastWord=-1;update({});}});
   globalThis.__hermesReader={open,...(pdfReader?{
     close:()=>onAction('close'),
-    readFrom:async element=>{if(!element)return;await globalThis.__hermesReader.ready;await open();const index=article?.words.findIndex(word=>element.contains(word.range?.startContainer));if(index>=0){await onAction('seek',{wordIndex:index});await onAction('play');}}
+    seekTo:async index=>{await open();if(article?.source!=='pdf'&&globalThis.HermesPDF)await load(HermesPDF.extract());manualScrollUntil=0;await onAction('seek',{wordIndex:index});},
+    refresh:async()=>{
+      if(!globalThis.HermesPDF)return;
+      const key=article?.words[state.wordIndex||0]?.sourceKey,wasPlaying=state.status==='playing';
+      if(closed){await open();return;}
+      await load(HermesPDF.extract());
+      const index=article.words.findIndex(w=>w.sourceKey===key);
+      if(index>=0)await onAction('seek',{wordIndex:index});
+      if(wasPlaying)await onAction('play');
+    },
+    readFrom:async element=>{if(!element)return;await globalThis.__hermesReader.ready;await open();if(article?.source!=='pdf'&&globalThis.HermesPDF)await load(HermesPDF.extract());const index=pdfReader&&globalThis.HermesPDF?article?.words.findIndex(word=>word.page>=Number(element.dataset.page)):article?.words.findIndex(word=>element.contains(word.range?.startContainer));if(index>=0){await onAction('seek',{wordIndex:index});await onAction('play');}}
   }:{})};
   globalThis.__hermesReader.ready=open();
 })();

@@ -263,3 +263,16 @@ test('opening a new reader starts at the saved generation speed rather than the 
  assert.equal(settings.generationSpeed,3.25);
  assert.equal(settings.speed,3.25);
 });
+
+test('PDF source adapter highlights original coordinates, jumps by page, and preserves position when filters change',async t=>{
+ const app=await harness(t,{pdf:true});await app.window.__hermesReader.close();
+ const words=[{text:'First',page:1,sourceKey:'a'},{text:'citation',page:1,sourceKey:'b'},{text:'Page two',page:2,sourceKey:'c'}];let filtered=false,highlighted=[];
+ const surface=app.window.document.querySelector('p');surface.dataset.page='2';
+ app.window.HermesPDF={extract:()=>({title:'Paper',source:'pdf',lang:'en',words:filtered?[words[0],words[2]]:words,chunks:[{text:'A paper',start:0,end:filtered?2:3}]}),clear:()=>{},highlight:index=>{highlighted.push(index);return {startContainer:surface,getBoundingClientRect:()=>({top:120,bottom:145,left:100,right:160})};}};
+ await app.window.__hermesReader.open();await app.window.__hermesReader.readFrom(surface);
+ assert.equal(app.commands.findLast(c=>c.action==='seek').wordIndex,2);
+ app.state({status:'playing',wordIndex:2});assert.equal(highlighted.at(-1),2);
+ filtered=true;await app.window.__hermesReader.refresh();
+ assert.equal(app.commands.findLast(c=>c.action==='seek').wordIndex,1);assert.equal(app.commands.at(-1).action,'play');
+ const payload=app.commands.findLast(c=>c.action==='load').article;assert.equal(payload.totalWords,2);assert.equal(payload.words,undefined);
+});

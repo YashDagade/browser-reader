@@ -5,4 +5,7 @@ const version=JSON.parse(await fs.readFile(new URL('package.json',base),'utf8'))
 if(version!=='6.4.299')throw Error('Expected pinned PDF.js 6.4.299. Review and update the vendor script when upgrading.');
 await fs.mkdir(target,{recursive:true});
 for(const [source,destination] of [['legacy/build/pdf.min.mjs','pdf.min.mjs'],['legacy/build/pdf.worker.min.mjs','pdf.worker.min.mjs'],['LICENSE','LICENSE.txt']])await fs.copyFile(new URL(source,base),new URL(destination,target));
-console.log('Copied PDF.js 6.4.299 parser, worker, and license without modifications.');
+for(const directory of ['cmaps','standard_fonts'])await fs.cp(new URL(directory,base),new URL(directory,target),{recursive:true});
+await fs.mkdir(new URL('wasm/',target),{recursive:true});
+for(const name of ['jbig2_nowasm_fallback.js','openjpeg_nowasm_fallback.js','LICENSE_JBIG2','LICENSE_OPENJPEG','LICENSE_PDFJS_JBIG2','LICENSE_PDFJS_OPENJPEG'])await fs.copyFile(new URL('wasm/'+name,base),new URL('wasm/'+name,target));
+console.log('Copied pinned PDF.js, CMaps, fonts, non-WASM image decoders, and their licenses.');
