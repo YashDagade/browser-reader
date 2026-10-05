@@ -40,8 +40,8 @@ function trustedEventHarness(window, enabled = true) {
   return control;
 }
 
-async function harness(t, { trustedEvents = true } = {}) {
-  const dom = new JSDOM('<!doctype html><html><body><article><p>These are <em>neuro</em>science words for reading.</p></article></body></html>', {pretendToBeVisual:true, runScripts: 'outside-only', url: 'https://article.example/' });
+async function harness(t, { trustedEvents = true, pdf = false } = {}) {
+  const dom = new JSDOM('<!doctype html><html><body><article><p>These are <em>neuro</em>science words for reading.</p></article></body></html>', {pretendToBeVisual:true, runScripts: 'outside-only', url: pdf?'chrome-extension://hermes/pdf.html':'https://article.example/' });
   t.after(() => dom.window.close());
   const window = dom.window, commands = [], highlights = new Map(), views = [];
   const trust = trustedEventHarness(window, trustedEvents);
@@ -50,8 +50,10 @@ async function harness(t, { trustedEvents = true } = {}) {
   window.Highlight = class { constructor(range) { this.range = range; } };
   window.Range.prototype.getBoundingClientRect = () => ({ top: 120, bottom: 150 });
   window.chrome = {
+    tabs:{getCurrent:async()=>({id:9})},
     storage: { local: { get: async () => ({}), set: async () => {} } },
     runtime: {
+      getURL:path=>'chrome-extension://hermes/'+path,
       onMessage: { addListener: callback => { listener = callback; } },
       sendMessage: async message => { commands.push(message); return respond(message); },
     },
@@ -68,9 +70,20 @@ async function harness(t, { trustedEvents = true } = {}) {
   window.eval(extractor);
   window.eval(source);
   await flush();
-  const state = value => listener({ type: 'hermes-state', sessionId: commands.findLast(command => command.action === 'load').sessionId, state: value }, {}, () => {});
+  const state = (value,tabId=9) => listener({ type: 'hermes-state',readerTabId:tabId, sessionId: commands.findLast(command => command.action === 'load').sessionId, state: value }, {}, () => {});
   return { window, commands, highlights, views, state, trust, setResponder:fn=>{respond=fn;}, probe:()=>new Promise(resolve=>listener({type:'hermes-probe'}, {},resolve)) };
 }
+
+test('PDF page reader routes controls to its own tab, ignores other tabs, and can begin from a text range',async t=>{
+  const app=await harness(t,{pdf:true});await app.window.__hermesReader.ready;
+  assert.equal(app.commands.find(m=>m.action==='load').readerTabId,9);
+  app.state({status:'playing',wordIndex:2},8);assert.equal(app.highlights.size,0);
+  app.state({status:'playing',wordIndex:2},9);assert.equal(app.highlights.get('hermes-word').range.toString(),'neuroscience');
+  await app.window.__hermesReader.readFrom(app.window.document.querySelector('em'));
+  assert.equal(app.commands.at(-2).action,'seek');assert.equal(app.commands.at(-2).wordIndex,2);
+  assert.equal(app.commands.at(-1).action,'play');assert.equal(app.commands.at(-1).readerTabId,9);
+  await app.window.__hermesReader.close();assert.equal(app.highlights.size,0);
+});
 
 test('double-clicking either inline fragment of a word seeks to that complete word', async t => {
   const app = await harness(t);

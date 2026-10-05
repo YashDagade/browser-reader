@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hermes · PDF reader</title><link rel="stylesheet" href="pdf.css"></head>
+<body>
+<header><a class="brand" href="pdf.html">HERMES <span>PDF reader</span></a><div id="page-controls" hidden><label for="page-number">Page</label><select id="page-number" aria-label="PDF page"></select><button type="button" id="read-page">Read from this page</button><button type="button" id="show-reader">Show player</button></div><div class="tools"><label class="file-button" for="pdf-file">Open PDF<input id="pdf-file" type="file" accept="application/pdf,.pdf"></label><a id="original" hidden target="_blank" rel="noopener noreferrer">Original PDF ↗</a><button id="setup" type="button">Options</button></div></header>
+<main><section class="intro"><h1 id="document-title">Listen to your PDFs.</h1><p id="status" role="status">Open a PDF to read it with your OpenAI voice. Text is extracted on this device.</p><progress id="progress" hidden aria-label="Extracting PDF"></progress><p class="note">A reading view of the PDF’s text. Scanned PDFs need OCR first; complex equations and tables may read imperfectly. Shortcuts: Alt+Shift+↑ / ↓ changes speed by 0.05×.</p></section><article id="pdf-article" aria-label="PDF text"></article></main>
+<script src="extractor.js"></script><script src="ui.js"></script><script type="module" src="pdf.js"></script>
+</body></html>

@@ -13,7 +13,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 function harness() {
   const indexedDB=new IDBFactory();
   let listener, hasOffscreen = false, audioSession = null, documentAlive=true;
-  const events = {}, messages = [], audio = [], saved = {}, local = {hermesConnection:{mode:'direct',apiKey:'private-test-value',consent:true}}, accesses=[];
+  const events = {}, messages = [], audio = [], saved = {}, local = {hermesConnection:{mode:'direct',apiKey:'private-test-value',consent:true}}, accesses=[], opened=[], injections=[], tabs=new Map();
   const event = name => ({ addListener: callback => { events[name] = callback; } });
   const clone = value => JSON.parse(JSON.stringify(value));
   const chrome = {
@@ -22,8 +22,8 @@ function harness() {
       onInstalled: event('installed'),
       openOptionsPage: async()=>{events.optionsOpened=true;},
       getURL: path => `chrome-extension://hermes/${path}`,
-      getContexts: async () => hasOffscreen ? [{}] : [],
-      sendMessage: async message => {audio.push(clone(message));if(message.action==='load')audioSession=message.sessionId;if(message.action==='unload')audioSession=null;return {ok:true,state:{sessionId:audioSession}};},
+      getContexts: async query => query.contextTypes.includes('TAB') ? [...tabs.values()].filter(tab=>query.tabIds.includes(tab.id)&&query.documentUrls.includes(tab.url)&&(!query.documentIds||query.documentIds.includes(tab.documentId))).map(tab=>({tabId:tab.id,documentUrl:tab.url,documentId:tab.documentId})) : hasOffscreen ? [{}] : [],
+      sendMessage: async message => {audio.push(clone(message));if(message.type==='hermes-probe')return documentAlive?{sessionId:message.sessionId}:undefined;if(message.action==='load')audioSession=message.sessionId;if(message.action==='unload')audioSession=null;return {ok:true,state:{sessionId:audioSession}};},
     },
     offscreen: {createDocument:async()=>{hasOffscreen=true;},closeDocument:async()=>{hasOffscreen=false;audioSession=null;}},
     alarms:{create:()=>{},clear:async()=>{},onAlarm:event('alarm')},
@@ -33,15 +33,17 @@ function harness() {
       local:{get:async key=>clone(Object.fromEntries([].concat(key).map(k=>[k,local[k]]))),set:async value=>Object.assign(local,clone(value)),setAccessLevel:async value=>{accesses.push(value);}},
     },
     tabs: {
+      get:async id=>tabs.get(id),create:async value=>opened.push(value),
       sendMessage: async (tabId, message) => { messages.push({ tabId, ...clone(message) });if(message.type==='hermes-probe')return documentAlive?{sessionId:message.sessionId}:undefined; },
       onRemoved: event('removed'), onUpdated: event('updated'),
     },
+    scripting:{executeScript:async value=>{injections.push(value);return [{result:events.pdfProbe||null}];}},
     action: { onClicked: event('clicked'), setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
     commands: { onCommand: event('command') },
     contextMenus: { onClicked: event('context') },
   };
   const restartWorker = () => vm.runInNewContext(vaultSource+'\n'+sessionSource+'\n'+source, {
-    chrome, crypto:webcrypto, indexedDB, TextEncoder, TextDecoder, Uint8Array, ArrayBuffer, clearInterval, setInterval, AbortSignal, importScripts:()=>{}, HermesSpeech:{health:async()=>({configured:true,mode:'direct',running:true})},
+    chrome, URL, crypto:webcrypto, indexedDB, TextEncoder, TextDecoder, Uint8Array, ArrayBuffer, clearInterval, setInterval, AbortSignal, importScripts:()=>{}, HermesSpeech:{health:async()=>({configured:true,mode:'direct',running:true})},
     fetch: async () => ({ json: async () => ({ configured: true }) }),
   });
   restartWorker();
@@ -52,8 +54,56 @@ function harness() {
   });
   const state = (value, sender = { url: chrome.runtime.getURL('offscreen.html') }, sessionId = 'article') => listener({ target: 'background', type: 'state', sessionId, state: value }, sender, () => {});
   const message=(type,extra={},sender={tab:{id:7}})=>new Promise(resolve=>listener({target:'background',type,...extra},sender,resolve));
-  return {restartWorker,replaceDocument:()=>{documentAlive=false;},command,load,state,message,messages,audio,events,saved,local,accesses,hasOffscreen:()=>hasOffscreen,expire:()=>{hasOffscreen=false;audioSession=null;}};
+  return {restartWorker,replaceDocument:()=>{documentAlive=false;},command,load,state,message,messages,audio,events,saved,local,accesses,opened,injections,tabs,hasOffscreen:()=>hasOffscreen,expire:()=>{hasOffscreen=false;audioSession=null;}};
 }
+
+test('speed shortcuts increment exactly 0.05, clamp at 7, and preserve narration speed without waking audio',async()=>{
+  const app=harness();await app.events.command('increase-speed');assert.equal(app.audio.length,0);
+  await app.load();await app.command('settings',{settings:{speed:2.3,generationSpeed:2.3}});
+  for(const expected of [2.35,2.4,2.45,2.5]){
+    await app.events.command('increase-speed');assert.equal(app.local.settings.speed,expected);
+    assert.equal(app.local.settings.generationSpeed,2.3);
+  }
+  assert.equal(app.audio.length,0);
+  await app.command('play');const loads=app.audio.filter(m=>m.action==='load').length;
+  await app.command('settings',{settings:{speed:6.98}});await app.events.command('increase-speed');
+  assert.equal(app.local.settings.speed,7);await app.events.command('increase-speed');assert.equal(app.local.settings.speed,7);
+  await app.events.command('decrease-speed');assert.equal(app.local.settings.speed,6.95);
+  await app.command('settings',{settings:{speed:.76}});await app.events.command('decrease-speed');assert.equal(app.local.settings.speed,.75);
+  assert.equal(app.audio.filter(m=>m.action==='load').length,loads);
+  app.restartWorker();await app.events.command('increase-speed');assert.equal(app.local.settings.speed,.8);
+});
+
+test('PDF invocation routes arXiv, PDF files and embeds into the local reader while ordinary pages keep in-page controls',async()=>{
+  const app=harness();
+  for(const url of ['https://arxiv.org/pdf/2311.00059','https://example.org/paper.PDF?download=1']){
+    await app.events.clicked({id:7,url});assert.equal(app.opened.at(-1).url,'chrome-extension://hermes/pdf.html?source='+encodeURIComponent(url));
+  }
+  assert.equal(app.injections.length,0);
+  await app.events.clicked({id:7,url:'file:///private/paper.pdf'});assert.equal(app.opened.at(-1).url,'chrome-extension://hermes/pdf.html');
+  await app.events.clicked({id:7,url:'https://example.org/essay'});assert.deepEqual(Array.from(app.injections.at(-1).files),['extractor.js','ui.js','content.js']);
+  app.events.pdfProbe='https://example.org/download?id=123';
+  await app.events.clicked({id:7,url:'https://example.org/paper'});assert.ok(app.opened.at(-1).url.includes(encodeURIComponent(app.events.pdfProbe)));
+  await app.events.clicked({id:9,url:'chrome-extension://hermes/pdf.html'});assert.equal(app.audio.at(-1).type,'hermes-open');assert.equal(app.audio.at(-1).readerTabId,9);
+});
+
+test('extension PDF reader messages are bound to their real tab and do not expose credentials',async()=>{
+  const app=harness(),url='chrome-extension://hermes/pdf.html?source=https%3A%2F%2Fexample.org%2Fpaper.pdf',sender={url,documentId:'pdf-document'};
+  app.tabs.set(9,{id:9,url,documentId:sender.documentId});
+  const send=(action,extra={})=>app.message('control',{action,readerTabId:9,sessionId:'pdf',...extra},sender);
+  assert.equal((await send('load',{article:{title:'Paper',totalWords:4,chunks:[{text:'Read this scientific paper.',start:0,end:4}]},settings:{speed:2.3}})).ok,true);
+  assert.equal(app.saved.current.tabId,9);
+  await send('play');assert.equal(app.audio.filter(m=>m.action==='load').length,1);
+  assert.equal((await app.message('connection-internal',{},sender)).error,'Not permitted.');
+  assert.match((await app.message('control',{action:'play',readerTabId:9,sessionId:'pdf'},{url,documentId:'replaced-document'})).error,/no longer available/);
+  await app.message('layout',{readerTabId:9,layout:{dock:'left'}},sender);
+  assert.equal(app.saved.playback.state.settings.layout.dock,'left');
+  app.state({status:'playing',wordIndex:2},undefined,'pdf');await flush();
+  const emitted=app.audio.findLast(m=>m.type==='hermes-state');assert.equal(emitted.readerTabId,9);assert.equal(emitted.state.wordIndex,2);
+  await app.events.updated(9,{status:'complete'});assert.ok(app.saved.current);
+  assert.equal((await app.message('control',{action:'pause',readerTabId:9,sessionId:'pdf'},{tab:{id:8},url:'https://example.org'})).code,'STALE_SESSION');
+  app.tabs.set(9,{id:9,url:'https://unrelated.example'});assert.match((await send('play')).error,/no longer available/);
+});
 
 test('background restores remembered credentials after session loss and exposes only safe setup metadata',async()=>{
   const app=harness(),options={url:'chrome-extension://hermes/options.html'},key='sk-'+'b'.repeat(32);

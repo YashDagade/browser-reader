@@ -86,10 +86,10 @@ test('playback controls dispatch actions appropriate to current state and stoppi
   assert.deepEqual(actions.map(event => event.action), ['play', 'pause', 'pause', 'play', 'previous', 'next', 'stop']);
 });
 
-test('toolbar speed cycles without opening preferences and the menu slider supports intermediate speeds', t => {
-  const { get, actions, dispatch } = fixture(t, { settings: { speed: 1 } });
+test('toolbar speed advances gently without opening preferences and the menu slider supports intermediate speeds', t => {
+  const { get, actions, dispatch } = fixture(t, { settings: { speed: 2.3 } });
   const button = get('.speed-toggle');
-  for (const speed of [1.5, 2, 4, 1]) {
+  for (const speed of [2.5, 2.7, 3, 3.3, 3.5, 3.7, 4, 4.3, 4.5, 4.7, 5, 5.3, 5.5, 5.7, 6, 6.3, 6.5, 6.7, 7, 7]) {
     assert.match(button.getAttribute('aria-label'), new RegExp(`Change to ${speed}×`));
     button.click();
     assert.deepEqual(actions.at(-1), { action: 'settings', payload: { speed } });
@@ -102,15 +102,16 @@ test('toolbar speed cycles without opening preferences and the menu slider suppo
   assert.equal(get('.drawer').hidden, false);
   const speed = get('#reader-speed');
   assert.equal(speed.min, '0.75');
-  assert.equal(speed.max, '4');
+  assert.equal(speed.max, '7');
+  assert.equal(speed.step, '0.05');
   speed.value = '2.75';
   dispatch(speed, 'input');
   assert.deepEqual(actions.at(-1), { action: 'settings', payload: { speed: 2.75 } });
   assert.equal(get('.speed-output').textContent, '2.75×');
   assert.equal(speed.getAttribute('aria-valuetext'), '2.75 times normal speed');
-  assert.match(button.getAttribute('aria-label'), /Change to 4×/);
+  assert.match(button.getAttribute('aria-label'), /Change to 3×/);
   button.click();
-  assert.equal(speed.value, '4');
+  assert.equal(speed.value, '3');
   assert.equal(get('.drawer').hidden, false);
 });
 
@@ -139,6 +140,13 @@ test('API voice settings exclude incompatible voices and offer connection setup'
   assert.doesNotMatch(get('.notice').textContent,/Browser voice/);
   dispatch(get('.connect'),'click');
   assert.deepEqual(actions.at(-1),{action:'setup',payload:undefined});
+});
+
+test('shift-click gently decreases playback speed without changing the generation rate',t=>{
+  const {get,actions,dom}=fixture(t,{settings:{speed:2.3,generationSpeed:2.3}});
+  get('.speed-toggle').dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true,composed:true,shiftKey:true}));
+  assert.deepEqual(actions.at(-1),{action:'settings',payload:{speed:2}});
+  assert.equal(get('#reader-generation-speed').value,'2.3');
 });
 
 test('seeking previews locally, survives playback updates, and dispatches one seek when committed', t => {
@@ -356,13 +364,13 @@ test('timing source is explained accurately and precise sync is configurable wit
 });
 
 test('remaining time always uses minutes and seconds, updates with playback and speed, and falls back without measured duration', t => {
-  const { ui, get } = fixture(t, { totalWords: 24000, settings: { speed: 1 } });
+  const { ui, get, dispatch } = fixture(t, { totalWords: 24000, settings: { speed: 1 } });
   ui.update({ remainingSeconds: 7321, status: 'playing' });
   assert.equal(get('.time').textContent, '122:01');
   ui.update({ remainingSeconds: 7319 });
   assert.equal(get('.time').textContent, '121:59');
-  get('.speed-toggle').click();
-  get('.speed-toggle').click();
+  get('#reader-speed').value='2';
+  dispatch(get('#reader-speed'),'input');
   assert.equal(get('.time').textContent, '61:00');
   ui.update({ remainingSeconds: undefined, wordIndex: 23900 });
   assert.equal(get('.time').textContent, '~0:16');
@@ -547,7 +555,7 @@ test('narration defaults to 2.3 and commits once without confusing generated spe
  dispatch(input,'change');
  assert.equal(actions.length,1);
  get('.speed-toggle').click();
- assert.deepEqual(actions.at(-1),{action:'settings',payload:{speed:4}});
+ assert.deepEqual(actions.at(-1),{action:'settings',payload:{speed:3.3}});
  assert.equal(input.value,'3.25');
  for (const invalid of ['','0','8']) {input.value=invalid;dispatch(input,'change');}
  assert.equal(actions.length,2);

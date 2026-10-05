@@ -6,9 +6,15 @@ let commandQueue = Promise.resolve();
 const storageReady = HermesSession.initialize();
 const clamp = (x,a,b) => Math.max(a,Math.min(b,x));
 function enqueue(operation) {const result=commandQueue.then(operation);commandQueue=result.catch(()=>{});return result;}
+const isPDFReader = url => typeof url==='string' && url.split(/[?#]/)[0]===chrome.runtime.getURL('pdf.html');
+function readerMessage(session,message) {
+  return isPDFReader(session.url)
+    ? chrome.runtime.sendMessage({...message,readerTabId:session.tabId})
+    : chrome.tabs.sendMessage(session.tabId,message,session.documentId?{documentId:session.documentId}:undefined);
+}
 function settingsOnly(value={}) {
   const result = {};
-  if(Number.isFinite(Number(value.speed)))result.speed=clamp(Number(value.speed),.75,4);
+  if(Number.isFinite(Number(value.speed)))result.speed=clamp(Number(value.speed),.75,7);
   if(typeof value.generationSpeed==='number' && Number.isFinite(value.generationSpeed))result.generationSpeed=clamp(value.generationSpeed,.75,4);
   if(value.model==='local')result.model=DEFAULTS.model;
   else if(['gpt-4o-mini-tts','tts-1','tts-1-hd'].includes(value.model))result.model=value.model;
@@ -31,7 +37,7 @@ async function preferences() {
 async function emit(state) {
   if(!current)return;
   current.state={...current.state,...state};
-  chrome.tabs.sendMessage(current.tabId,{type:'hermes-state',sessionId:current.sessionId,state:current.state}).catch(()=>{});
+  readerMessage(current,{type:'hermes-state',sessionId:current.sessionId,state:current.state}).catch(()=>{});
   const status=current.state.status;
   if(status!==lastStatus) {
     lastStatus=status;
@@ -137,6 +143,26 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
   if(message.target!=='background')return;
   const internal=sender.url===chrome.runtime.getURL('offscreen.html')&&!sender.tab;
   const options=sender.url?.split('?')[0]===chrome.runtime.getURL('options.html');
+  const pdf=isPDFReader(sender.url);
+  // Extension-owned PDF pages use runtime messages; ordinary webpage controls
+  // remain bound to the actual sender tab, never a tab id supplied by a page.
+  if(pdf && !sender.tab && ['control','layout'].includes(message.type)) {
+    if(!Number.isInteger(message.readerTabId)){reply({error:'Invalid reader tab.'});return;}
+    chrome.runtime.getContexts({contextTypes:['TAB'],tabIds:[message.readerTabId],documentUrls:[sender.url],...(sender.documentId?{documentIds:[sender.documentId]}:{})}).then(contexts=>{
+      if(!contexts.length)throw Error('Reader tab changed.');
+      const tab={id:message.readerTabId,url:sender.url},nextSender={...sender,tab};
+      if(message.type==='control')return enqueue(()=>control(message,nextSender)).catch(error=>({error:error.message}));
+      return enqueue(async()=>{
+        await restore();
+        const settings=await preferences();Object.assign(settings,settingsOnly({layout:message.layout}));
+        await HermesSession.savePreferences(settings);
+        if(current?.tabId===tab.id&&(!current.documentId||!sender.documentId||current.documentId===sender.documentId)) {
+          current.settings.layout=settings.layout;await emit({settings:current.settings});
+        }
+        return {ok:true};
+      });
+    }).then(reply).catch(()=>reply({error:'The PDF reader is no longer available.'}));return true;
+  }
   if(message.type==='connection-internal') {
     if(!internal&&!options){reply({error:'Not permitted.'});return;}
     storageReady.then(async()=>{
@@ -162,7 +188,7 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
     enqueue(async()=>{await HermesSession.savePreferences({...await preferences(),...settingsOnly(message.settings)});reply({ok:true});}).catch(()=>reply({error:'Preferences could not be saved.'}));return true;
   }
   if(message.type==='preferences') {
-    if(!sender.tab&&!options){reply({error:'Not permitted.'});return;}
+    if(!sender.tab&&!options&&!pdf){reply({error:'Not permitted.'});return;}
     preferences().then(settings=>reply({settings}));return true;
   }
   if(message.type==='layout') {
@@ -186,11 +212,31 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
 });
 async function activate(tab) {
   if(!tab?.id)return;
-  try{await chrome.scripting.executeScript({target:{tabId:tab.id},files:['extractor.js','ui.js','content.js']});}
+  if(isPDFReader(tab.url)) {await chrome.runtime.sendMessage({type:'hermes-open',readerTabId:tab.id}).catch(()=>{});return;}
+  let url;
+  try {url=new URL(tab.url);}catch{}
+  const pdfURL=url&&['https:','http:','file:'].includes(url.protocol)&&(/\.pdf$/i.test(url.pathname)||(/(^|\.)arxiv\.org$/i.test(url.hostname)&&url.pathname.startsWith('/pdf/')));
+  const openPDF=source=>chrome.tabs.create({url:chrome.runtime.getURL('pdf.html')+(source?'?source='+encodeURIComponent(source):'')});
+  if(pdfURL){await openPDF(url.protocol==='file:'?'':url.href);return;}
+  try{
+    const [probe]=await chrome.scripting.executeScript({target:{tabId:tab.id},func:()=>{
+      const embedded=document.querySelector('embed[type="application/pdf"],object[type="application/pdf"]');
+      return document.contentType==='application/pdf'?location.href:embedded?.src||embedded?.data||null;
+    }});
+    if(probe?.result){await openPDF(probe.result);return;}
+    await chrome.scripting.executeScript({target:{tabId:tab.id},files:['extractor.js','ui.js','content.js']});
+  }
   catch{await chrome.tabs.create({url:chrome.runtime.getURL('options.html')+'?restricted=1'});}
 }
 chrome.action.onClicked.addListener(activate);
-chrome.commands.onCommand.addListener(async command=>{if(command==='_execute_action'){const [tab]=await chrome.tabs.query({active:true,currentWindow:true});await activate(tab);}});
+chrome.commands.onCommand.addListener(async command=>{
+  if(command==='_execute_action'){const [tab]=await chrome.tabs.query({active:true,currentWindow:true});await activate(tab);}
+  if(command==='increase-speed'||command==='decrease-speed')await enqueue(async()=>{
+    await restore();if(!current)return;
+    const speed=clamp(Math.round((current.settings.speed+(command==='increase-speed'?.05:-.05))*100)/100,.75,7);
+    await control({action:'settings',sessionId:current.sessionId,settings:{speed}},{tab:{id:current.tabId},documentId:current.documentId});
+  });
+});
 chrome.runtime.onInstalled.addListener(async details=>{
   chrome.contextMenus.removeAll(()=>chrome.contextMenus.create({id:'hermes-read',title:'Read with Hermes',contexts:['selection','page']}));
   const settings=await preferences();if(details?.previousVersion==='0.1.0')settings.voice='alloy';
@@ -209,8 +255,7 @@ chrome.tabs.onUpdated.addListener((id,change)=>enqueue(async()=>{
   await restore();if(current?.tabId!==id)return;
   const session=current;
   try {
-    const options=session.documentId?{documentId:session.documentId}:undefined;
-    const response=await chrome.tabs.sendMessage(id,{type:'hermes-probe',sessionId:session.sessionId},options);
+    const response=await readerMessage(session,{type:'hermes-probe',sessionId:session.sessionId});
     if(response?.sessionId===session.sessionId)return;
   } catch { /* The original document was replaced or discarded. */ }
   if(current!==session)return;

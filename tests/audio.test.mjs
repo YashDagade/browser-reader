@@ -498,8 +498,12 @@ test('generated speed normalizes playback and remaining time without moving word
   await flush();
   assert.equal(app.players.at(-1).currentTime, 1.2);
   assert.equal(app.players.at(-1).playbackRate, 1 / 2.3);
-  app.command('settings', { settings: { speed: 4 } });
-  assert.equal(app.players.at(-1).playbackRate, 4 / 2.3);
+  for(const speed of [2.35,2.4,4,7]) {
+    app.command('settings', { settings: { speed } });
+    assert.equal(app.players.at(-1).playbackRate, speed / 2.3);
+    assert.equal(app.players.at(-1).currentTime, 1.2);
+    assert.equal(app.players.at(-1).preservesPitch, true);
+  }
   assert.equal(app.requests.length, 1);
   assert.equal(app.alignments.length, 1);
   app.command('stop');

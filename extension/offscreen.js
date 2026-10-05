@@ -93,7 +93,7 @@
 
   function speed(value) {
     const number = Number(value);
-    return Number.isFinite(number) ? Math.max(0.75, Math.min(4, number)) : settings.speed;
+    return Number.isFinite(number) ? Math.max(0.75, Math.min(7, number)) : settings.speed;
   }
 
   function playbackRate(entry = cache.get(currentChunk)) {

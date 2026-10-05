@@ -2,7 +2,7 @@
 
 **Your reading. At your pace.** A small Chrome extension for listening to articles, essays, and technical writing without leaving the page.
 
-Click **Start reading**, follow the highlighted words, and change speed from **0.75× to 4×**. Connect your own OpenAI API key directly from Chrome. All narration uses OpenAI; there is no browser or system voice fallback. No Node, hosted backend, or build step is needed.
+Click **Start reading**, follow the highlighted words, and change speed from **0.75× to 7×**. Connect your own OpenAI API key directly from Chrome. All narration uses OpenAI; there is no browser or system voice fallback. No Node, hosted backend, or build step is needed.
 
 - A readable floating player with play, pause, stop, passage skipping, and a position slider.
 - Drag it anywhere, drop it near an edge to dock, or collapse it to a small movable button while listening.
@@ -13,7 +13,7 @@ Click **Start reading**, follow the highlighted words, and change speed from **0
 
 ## Install and listen
 
-Requires **desktop Chrome 116+**. Version **0.7.0 adds a preferred OpenAI narration speed, starting at 2.3×**, alongside optional encrypted key storage that survives Chrome restarts. All narration requires OpenAI. The previous 0.4.0 package was submitted for review; this update has not been submitted. Install the unpacked extension below. Chrome extensions do not run on iPhone or iPad, even in desktop mode; a Safari version would require a separate port. See [Google's device compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en).
+Requires **desktop Chrome 116+**. Version **0.8.0 adds PDF reading, 0.05× speed shortcuts, and playback up to 7×**. Your OpenAI model, voice, 2.3× narration default, and optional encrypted credential storage are preserved. All narration requires OpenAI. The previous 0.4.0 package was submitted for review; this update has not been submitted. Install the unpacked extension below. Chrome extensions do not run on iPhone or iPad, even in desktop mode; a Safari version would require a separate port. See [Google's device compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en).
 
 1. [Download `hermes-extension.zip`](https://github.com/YashDagade/browser-reader/releases/latest/download/hermes-extension.zip) and extract it to a folder you will keep.
 2. Open `chrome://extensions` and enable **Developer mode**.
@@ -59,17 +59,18 @@ Install the extension separately in each Chrome profile. Direct keys and prefere
 | Open Hermes | Toolbar icon, page context menu, or `Alt+Shift+R` (`Option+Shift+R` on Mac) |
 | Play / pause | Main button or `Alt+Space` while the page is focused |
 | Pause | `Escape` while the page is focused |
-| Cycle speed | Toolbar speed button: 1× → 1.5× → 2× → 4× |
-| Set any speed or change voice | Settings; the speed slider covers 0.75×–4× |
+| Increase speed | Toolbar speed button: 2.3× → 2.5× → 2.7× → 3× → 3.3×, continuing gently to 7×; Shift-click steps down |
+| Fine speed adjustment | `Alt+Shift+↑` / `Alt+Shift+↓` (`Option` on Mac) increases/decreases the current reader by 0.05× |
+| Set any speed or change voice | Settings; the speed slider covers 0.75×–7× in 0.05× steps |
 | Set the default narration speed | Settings → Voice & reading preferences, or extension Options |
 | Seek | Double-click a non-link word or use the position slider |
 | Move between passages | Previous / next buttons |
 | Move / dock / collapse | Drag handle, drop near any edge, or use position/collapse controls |
 | Reset or close | Stop or close; closing stops playback |
 
-Select a passage before opening Hermes to read just that selection. **Read your own text** accepts pasted text without page highlighting. Customize the opening shortcut at `chrome://extensions/shortcuts` if another app claims it.
+Select a passage before opening Hermes to read just that selection. **Read your own text** accepts pasted text without page highlighting. Customize the opening and speed shortcuts at `chrome://extensions/shortcuts` if another app claims it.
 
-**Two speed controls:** Default narration speed tells OpenAI how quickly to generate the recording and sets the starting speed for a new reader. It defaults to **2.3×** and accepts **0.75×–4×**. Editing it in the player applies when you leave the field, preserves your word position, and may request new audio. Options changes apply when you next open a reader. The ordinary toolbar button and reading-speed slider adjust the existing recording locally and never regenerate it. At a 2.3× narration default, choosing 2.3× plays the file at its original rate; choosing 1× plays it at `1 / 2.3`. Word timing and the countdown follow that ratio.
+**Two speed controls:** Default narration speed tells OpenAI how quickly to generate the recording and sets the starting speed for a new reader. It defaults to **2.3×** and accepts **0.75×–4×**. Editing it in the player applies when you leave the field, preserves your word position, and may request new audio. Options changes apply when you next open a reader. The ordinary toolbar button and reading-speed slider adjust the existing recording locally and never regenerate it. At a 2.3× narration default, choosing 2.3× plays the file at its original rate; choosing 1× plays it at `1 / 2.3`. Word timing and the countdown follow that ratio. Choosing 7× uses `7 / 2.3` playback on a 2.3× recording. The OpenAI generation parameter stays within its 4× limit; higher listening speeds use pitch-preserving local playback and can reduce intelligibility.
 
 Setting the default to **1×** restores the previous generation behavior. OpenAI does not document that its speed parameter sounds better than browser time stretching; compare the two with your preferred voice. Slowing a fast recording may sound different from generating a new recording at 1×. See the [speech-provider research notes](docs/tts-options.md) for Azure and ElevenLabs options.
 
@@ -78,6 +79,14 @@ Dropping near the left or right edge makes the toolbar vertical; top and bottom 
 **Word timing:** **Improve timing** matches background `whisper-1` transcription timestamps to the source. Playback starts without waiting; estimates remain while alignment is pending or unavailable. This adds API usage and is not perfectly exact. Choose **Lightweight** to disable it. See [OpenAI's transcription guide](https://developers.openai.com/api/docs/guides/speech-to-text).
 
 **Time remaining** appears as minutes:seconds. Buffered audio uses measured durations; passages not yet generated use estimates. Playback speed is reflected in the countdown.
+
+## PDFs
+
+Click Hermes while viewing a PDF, including arXiv `/pdf/` links. Hermes opens a separate **PDF reader** tab, extracts selectable text locally, and displays it with the same OpenAI player, word highlighting, double-click seeking, and auto-scroll. Keep the original tab open until extraction finishes. Choose a page in the sticky header, then **Read from this page** to begin there. Opening the document does not start a speech request.
+
+For downloaded PDFs, or if a site blocks direct access, open Hermes **Options → Open a PDF in Hermes**, then choose **Open PDF** and select the file. No file-access permission, upload service, OCR model, or Node process is needed. The PDF itself stays on your device; only narration passages go to OpenAI after you press Play with consent.
+
+The bundled PDF.js parser loads only in the PDF reader and its worker is released after extraction. The reader removes repeated margin headers and page numbers, joins line-break hyphenation, and handles common two-column layouts. Text is reflowed rather than drawn over the original PDF. Scanned pages need OCR first; complex tables, equations, uncommon fonts, and unusual layouts may still read imperfectly. Limits: 50 MiB, 500 pages, and two million extracted characters. Password-protected PDFs need an unlocked copy. Web PDFs with unrecognized URLs can still be downloaded and opened manually.
 
 ## Privacy and limits
 
@@ -89,7 +98,7 @@ The audio document is created when needed and released on stop/close or after th
 
 Environment and common credential files are Git-ignored; no key is bundled in the source or extension ZIP. The helper rejects website origins and supports an optional extension-ID allowlist. See the [privacy policy](PRIVACY.md) and [security and data flow](docs/architecture.md#credentials-and-request-boundaries).
 
-OpenAI needs an initial buffer; fast playback and chunk transitions can cause gaps. Unusual layouts may require selecting or pasting text. Chrome internal pages, the Web Store, and the built-in PDF viewer are unsupported. Hermes does not bypass paywalls or reveal collapsed content.
+OpenAI needs an initial buffer; fast playback and chunk transitions can cause gaps. Unusual layouts may require selecting or pasting text. Chrome internal pages and the Web Store are unsupported. PDFs use a separate Hermes reading view; controls cannot be injected into Chrome’s native PDF canvas. Hermes does not bypass paywalls or reveal collapsed content.
 
 If speech fails, check your OpenAI connection, key, quota, and data-sharing consent in Options. Hermes never falls back to a system voice. If extraction misses, close Hermes and reopen it with the desired passage selected.
 
@@ -109,9 +118,9 @@ npm run check:secrets
 npm run package
 ```
 
-Plain JavaScript, HTML, and CSS; `jsdom` is development-only. Mocked tests spend no API credits. Packaging checks the exact files for credential patterns and writes `output/hermes-extension.zip` for unpacked installs and `output/hermes-chrome-web-store.zip` with a root manifest for store submission. See the [submission draft and assets](docs/chrome-web-store-listing.md). See [the architecture notes](docs/architecture.md). Reproducible contributions are welcome; keep private content and credentials out of issues.
+Plain JavaScript, HTML, and CSS; `jsdom` is development-only. PDF.js 6.4.299 is vendored under its Apache-2.0 license; `npm run vendor:pdf` reproduces the bundled parser and worker from the pinned dependency. Tests compare the vendored files to that dependency. Mocked tests spend no API credits. Packaging checks the exact files for credential patterns and writes `output/hermes-extension.zip` for unpacked installs and `output/hermes-chrome-web-store.zip` with a root manifest for store submission. See the [submission draft and assets](docs/chrome-web-store-listing.md). See [the architecture notes](docs/architecture.md). Reproducible contributions are welcome; keep private content and credentials out of issues.
 
-Licensed under [MIT](LICENSE).
+Hermes is licensed under [MIT](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md) for PDF.js.
 
 ## Demo
 

@@ -3,10 +3,12 @@
   let article, ui, settings = {speed: 2.3, generationSpeed: 2.3, voice: 'alloy', model: 'gpt-4o-mini-tts', follow: true, instructions:'', syncMode:'precise'};
   let sessionId = null, state = {status:'ready',wordIndex:0}, lastWord=-1, closed=true;
   let lastScroll=0, manualScrollUntil=0;
+  const pdfReader=location.href.split(/[?#]/)[0]===chrome.runtime.getURL?.('pdf.html');
+  let readerTabId;
   const scrollParents=new WeakMap();
   const highlightStyle = document.createElement('style');
   highlightStyle.textContent = '::highlight(hermes-word){background:#f2cf69;color:#111;text-decoration:underline;text-decoration-color:#aa8321}::highlight(hermes-context){background:rgba(242,207,105,.12)}';
-  const rawSend = (action, payload={}) => chrome.runtime.sendMessage({target:'background', type:'control', action, sessionId, ...payload});
+  const rawSend = (action, payload={}) => chrome.runtime.sendMessage({target:'background', type:'control', action, sessionId, ...(pdfReader?{readerTabId}:{}), ...payload});
   let reconnecting=null;
   const sourcePayload=()=>({article:{title:article.title,lang:article.lang,chunks:article.chunks,totalWords:article.words.length},settings});
   async function send(action,payload={}) {
@@ -101,6 +103,7 @@
   async function open({selectionOnly=false}={}) {
     if (!closed && ui) { ui.host.style.display=''; ui.expand?.(); return; }
     try {
+      if(pdfReader)readerTabId=(await chrome.tabs.getCurrent()).id;
       const stored=await chrome.runtime.sendMessage({target:'background',type:'preferences'});
       settings={...settings,...stored?.settings};
       // A new reader starts at the preferred narration rate; toolbar adjustments
@@ -119,7 +122,7 @@
         try {await send('close');} finally {ui?.destroy();ui=null;article=null;sessionId=null;closed=true;clearHighlight();highlightStyle.remove();}return;
       }
       if (action==='paste') { await load(ReaderExtract.fromText(payload.text,'Your text'));await send('play');return; }
-      if(action==='layout') {settings.layout=payload;await chrome.runtime.sendMessage({target:'background',type:'layout',layout:payload});return;}
+      if(action==='layout') {settings.layout=payload;await chrome.runtime.sendMessage({target:'background',type:'layout',layout:payload,...(pdfReader?{readerTabId}:{})});return;}
       if (action==='settings') {
         settings={...settings,...payload};
         const result=await send('settings',{settings});if(result?.error)throw Error(result.error);
@@ -137,6 +140,7 @@
     } catch(error) { update({status:'error',error:error.message||'Reader connection failed. Reload this page and try again.'}); }
   }
   chrome.runtime.onMessage.addListener((message,_sender,reply)=>{
+    if(pdfReader && message.readerTabId!==readerTabId)return;
     if(message.type==='hermes-probe') {reply({sessionId:closed?null:sessionId});return;}
     if (message.type==='hermes-open') { open(message).then(()=>reply({ok:true}));return true; }
     if (message.type==='hermes-state' && message.sessionId===sessionId) {
@@ -169,6 +173,9 @@
   document.addEventListener('wheel',userScrolled,{passive:true});
   document.addEventListener('touchmove',userScrolled,{passive:true});
   document.addEventListener('visibilitychange',event=>{if(event.isTrusted&&!document.hidden&&!closed){lastWord=-1;update({});}});
-  globalThis.__hermesReader={open};
-  open();
+  globalThis.__hermesReader={open,...(pdfReader?{
+    close:()=>onAction('close'),
+    readFrom:async element=>{if(!element)return;await globalThis.__hermesReader.ready;await open();const index=article?.words.findIndex(word=>element.contains(word.range?.startContainer));if(index>=0){await onAction('seek',{wordIndex:index});await onAction('play');}}
+  }:{})};
+  globalThis.__hermesReader.ready=open();
 })();

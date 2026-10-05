@@ -1,14 +1,15 @@
 # Hermes privacy policy
 
-Updated September 20, 2026. Applies to Hermes 0.6.0 and later unless replaced by a newer policy.
+Updated October 5, 2026. Applies to Hermes 0.8.0 and later unless replaced by a newer policy.
 
-Hermes reads webpage articles, selected passages, and pasted text aloud. All narration uses OpenAI voices with your own API key. There is no browser or on-device voice fallback. The extension sends no reading content or credentials to its developer. There is no Hermes account, developer-operated data service, analytics, advertising, or sale of user data.
+Hermes reads webpage articles, selected passages, pasted text, and selectable PDF text aloud. All narration uses OpenAI voices with your own API key. There is no browser or on-device voice fallback. The extension sends no reading content or credentials to its developer. There is no Hermes account, developer-operated data service, analytics, advertising, or sale of user data.
 
 ## What Hermes handles
 
 | Information | Purpose and handling |
 | --- | --- |
 | Article, selected, or pasted text | Extracted on your device after you invoke the reader; used for narration, word highlighting, and seeking. OpenAI receives the current and a few upcoming passages only when you enable that connection and consent. |
+| PDF files | Fetched from the document site after invocation or opened from a local file picker. Parsed locally by bundled PDF.js in a worker, which is released after extraction. The original PDF is not sent to OpenAI or saved in Hermes storage. Extracted text is handled like article text. No OCR or remote document-processing service is used. |
 | Current page title and URL | Held temporarily on your device with the reading session to identify the active article and detect navigation. Hermes does not build a browsing-history log or send these fields as OpenAI request metadata. The text you narrate can itself contain titles or URLs. |
 | Your OpenAI API key | Used only to authenticate your requests to OpenAI. Direct mode uses browser-session memory and, only if you enable Remember on this device, an encrypted persistent copy in this Chrome profile. An optional local helper instead reads your private environment file. No shared developer key is provided. |
 | Custom pronunciation or delivery guidance | Held in browser-session memory and included with supported OpenAI speech requests. It is not retained with persistent preferences. |

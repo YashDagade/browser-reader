@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Hermes \u00b7 Article Reader",
   "description": "Your articles, at your pace. Fast speech, word highlighting, and a quiet floating player.",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "minimum_chrome_version": "116",
   "permissions": [
     "activeTab",
@@ -29,6 +29,20 @@
         "mac": "Alt+Shift+R"
       },
       "description": "Open Hermes on this page"
+    },
+    "increase-speed": {
+      "suggested_key": {
+        "default": "Alt+Shift+Up",
+        "mac": "Alt+Shift+Up"
+      },
+      "description": "Increase reading speed by 0.05\u00d7"
+    },
+    "decrease-speed": {
+      "suggested_key": {
+        "default": "Alt+Shift+Down",
+        "mac": "Alt+Shift+Down"
+      },
+      "description": "Decrease reading speed by 0.05\u00d7"
     }
   },
   "icons": {

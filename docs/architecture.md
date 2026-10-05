@@ -6,14 +6,15 @@ Hermes is a Manifest V3 Chrome extension. It extracts article text locally, keep
 flowchart LR
     Page[Article or selection] --> Extract[Local DOM extraction]
     Extract --> Worker[Extension service worker]
-    Worker --> Native[Chrome speech interface]
     Worker --> Audio[Offscreen audio document]
     Audio --> Client[Speech client]
     Client -->|Direct mode| API[OpenAI speech and transcription]
     Client -->|Local mode| Helper[Loopback Node helper]
     Helper --> API
-    Native --> Player[Player and word highlights]
-    Audio --> Player
+    Audio --> Player[Player and word highlights]
+    PDF[PDF file] --> Parser[Bundled local PDF.js worker]
+    Parser --> View[Hermes PDF text view]
+    View --> Extract
 ```
 
 ## Components
@@ -21,6 +22,7 @@ flowchart LR
 | File | Responsibility |
 | --- | --- |
 | `extension/manifest.json` | On-demand tab access, local helper permission, optional OpenAI permission |
+| `extension/pdf.html`, `pdf.js`, `pdf-text.mjs` | On-demand PDF import, local text layout and cleaning, and a reflowed reading view |
 | `extension/extractor.js` | Article scoring, noise filtering, DOM word ranges, and chunking |
 | `extension/content.js` | Page session, keyboard controls, word seeking, and CSS highlights |
 | `extension/ui.js` | Draggable, dockable, collapsible player isolated in a Shadow DOM |
@@ -42,11 +44,11 @@ Substack's `article.newsletter-post` is article content, not a newsletter signup
 
 Words retain DOM `Range` objects that can span inline markup. CSS Custom Highlights mark the current word without replacing or wrapping the article's text nodes. Double-click seeking maps the selected DOM position back to those ranges; single clicks, links, and interactive controls retain their normal behavior. Pasted text has no page ranges. If a site replaces its content after extraction, reopen Hermes to refresh the map.
 
-The toolbar speed button cycles 1×, 1.5×, 2×, and 4× directly; settings offer a continuous 0.75×–4× slider. Dropping the drag handle or collapsed button within 48 pixels of an edge snaps to it. Left/right docking is vertical; top/bottom docking is horizontal. Manual position controls provide the same choices.
+The toolbar speed button advances through smaller steps (2.3×, 2.5×, 2.7×, 3×, 3.3× and onward to 7×); Shift-click decreases. Settings offer a 0.75×–7× slider with 0.05× steps. Dropping the drag handle or collapsed button within 48 pixels of an edge snaps to it. Left/right docking is vertical; top/bottom docking is horizontal. Manual position controls provide the same choices.
 
 Auto-scroll tracks the word's range, not the whole paragraph, and checks scrollable ancestors as well as the viewport. It scrolls before the word reaches the lower reading boundary and accounts for overlap with the player. Wheel or touch scrolling holds automatic following for 1.2 seconds; following then resumes on playback updates. Reduced-motion preferences disable smooth scrolling.
 
-This is a heuristic HTML reader. It does not parse PDFs, images, cross-origin frames, or inaccessible shadow content, and it does not reveal hidden or paywalled text.
+HTML extraction is heuristic. Images, cross-origin frames, and inaccessible shadow content are not extracted, and hidden or paywalled text is not revealed. Selectable PDFs use the separate local PDF reader described below.
 
 ## Speech, timing, and latency
 
@@ -79,6 +81,16 @@ If a control request finds a stale background session, the content script reload
 Generation and operation counters prevent late responses from starting stale playback or undoing a pause. Stop and voice/model/guidance changes cancel pending work and clear relevant RAM audio. Saved chunks remain available under their own model/voice/guidance keys. Seeking cancels distant prefetch and prioritizes the target passage. Released RAM entries revoke object URLs.
 
 The optional helper caches up to **16 MiB** of audio, keyed by model, voice, text, and guidance, with a ten-minute expiry checked on requests and by a lightweight periodic sweep. Cached word timestamps can be reused alongside audio. The cache is memory-only and clears when the process exits.
+
+## PDF reading
+
+The toolbar recognizes `.pdf` and arXiv `/pdf/` URLs before trying content-script injection, and probes ordinary pages for PDF MIME types or embedded viewers. It opens an extension-owned `pdf.html` tab, which fetches the source using the temporary active-tab host grant. No broad host permission is added. Keep the original tab open during fetch. Restricted hosts, redirects, extensionless URLs Chrome refuses to probe, and local files have an explicit file-picker fallback in Options.
+
+PDF.js 6.4.299 is bundled as the legacy parser and worker with its license. It is dynamically loaded only by the PDF reader, with evaluation, WASM, and font rendering disabled. The parser extracts text sequentially, cleans repeated margin text and typesetting hyphens, estimates common column order, and destroys the worker after extraction or failure. Limits are 50 MiB, 500 pages, and two million extracted characters. No page canvases or OCR models are allocated; source bytes are not persisted. Complex document layout remains heuristic.
+
+The view creates DOM paragraphs with `textContent`, then uses the same extractor, UI, and content controller as ordinary articles. Runtime messages carry the reader tab ID; the service worker checks it against the sender document and tab in Chrome’s trusted extension-context inventory when Chrome omits `sender.tab`. Playback events are addressed to that reader tab and session. The PDF page cannot retrieve API credentials through the internal connection routes. Closing or replacing the PDF stops the old session.
+
+Global Chrome commands adjust effective playback by 0.05×, clamped to 0.75×–7×. The toolbar uses smaller presets and Shift-click to decrease. Generation remains capped at 4×. Ordinary speed adjustments change only `playbackRate`, preserving the audio cache key, source timestamps, and voice.
 
 ## Credentials and request boundaries
 

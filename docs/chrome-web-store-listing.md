@@ -1,6 +1,6 @@
 # Chrome Web Store submission
 
-**Target version: 0.7.0. Status: prepared, not yet submitted.** This API-only update adds a preferred narration speed (default 2.3×) and includes optional encrypted credential storage and replaces the 0.4.0 package previously submitted on September 20, 2026. The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. Final submission and approval must be verified in the dashboard. The publisher's account address is intentionally absent from public source.
+**Target version: 0.8.0. Status: prepared, not yet submitted.** This API-only update adds local PDF reading, 0.05× speed shortcuts, and playback up to 7×. It preserves the 2.3× narration default and optional encrypted credential storage and replaces the 0.4.0 package previously submitted on September 20, 2026. The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. Final submission and approval must be verified in the dashboard. The publisher's account address is intentionally absent from public source.
 
 ## Listing fields
 
@@ -25,7 +25,9 @@ Connect your own OpenAI API key for expressive AI narration. All voices use Open
 
 Reading controls:
 
-- Adjust playback from 0.75× to 4× without regenerating audio. Choose a default OpenAI narration speed in voice preferences (2.3× initially); changing that default can incur new speech requests.
+- Adjust playback from 0.75× to 7× without regenerating audio. Choose a default OpenAI narration speed in voice preferences (2.3× initially); changing that default can incur new speech requests.
+- Open web PDFs in a Hermes reading view, or choose a local PDF from Options. Extraction happens locally; PDFs are not uploaded to a document service.
+- Adjust speed precisely with Alt+Shift+Up/Down (Option on Mac), in 0.05× increments.
 - Follow highlighted words, double-click a word to seek, and skip between passages.
 - Drag the player, drop it near an edge to dock, or collapse it while listening.
 - Let auto-scroll follow the narration, or scroll manually without immediately being pulled back.
@@ -41,11 +43,11 @@ Privacy and setup:
 - Audio is cached locally with encryption for reuse within the same browser session. Clear it from Options.
 - No Hermes account, analytics, advertising, or developer-operated content service.
 
-Designed for desktop Chrome. Chrome internal pages, the Web Store, and the built-in PDF viewer are unsupported. Hermes does not bypass paywalls. OpenAI needs an initial audio buffer, and fast playback can sometimes catch up with generation. This package does not run on iPhone, iPad, or Safari.
+Designed for desktop Chrome. Chrome internal pages and the Web Store are unsupported. PDFs open in a separate Hermes text reading view; scanned pages need OCR first and complex layout may read imperfectly. Hermes does not bypass paywalls. OpenAI needs an initial audio buffer, and fast playback can sometimes catch up with generation. This package does not run on iPhone, iPad, or Safari.
 
 ## Privacy practices fields
 
-**Single purpose:** Read the webpage text, selection, or pasted passage chosen by the user aloud, with playback-speed controls, highlighting, and navigation through the same text.
+**Single purpose:** Read the webpage text, PDF text, selection, or pasted passage chosen by the user aloud, with playback-speed controls, highlighting, and navigation through the same text.
 
 Use the dashboard's actual field labels. These declarations describe data handled by the extension, including local processing and third-party API requests; they must not be replaced by “no data collected” merely because the developer has no server. Google's [User Data FAQ](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq) explicitly includes local handling, and its [privacy-field guide](https://developer.chrome.com/docs/webstore/cws-dashboard-privacy) requires consistency with the privacy policy.
 
@@ -64,7 +66,7 @@ Use the dashboard's actual field labels. These declarations describe data handle
 
 | Manifest permission | Reviewer-facing justification |
 | --- | --- |
-| `activeTab` | Read the current page only after the user invokes Hermes, without blanket access to all sites. |
+| `activeTab` | Read the current page, or fetch its PDF from the granted origin, only after the user invokes Hermes; no blanket access to all sites. |
 | `scripting` | Inject the bundled extractor, player, and highlighting controls into that invoked tab. |
 | `storage` | Store nonsecret preferences, temporary session state, credentials in memory with optional encrypted persistence, and the bounded encrypted audio cache. No Chrome Sync is used. |
 | `offscreen` | Play generated audio independently of the page UI and manage its bounded audio resources. The document is released on stop/close or idle cleanup. |
@@ -82,14 +84,14 @@ Hermes has no login or subscription. Audio playback requires a reviewer-owned Op
 1. Install the extension in desktop Chrome and open a public article. Click Hermes. Before API setup, a **Connect OpenAI** prompt should appear; it opens Options. No system voice or speech request should start.
 2. In Options, select **Direct from Chrome**, supply a reviewer-owned OpenAI API key, read the disclosure, check consent, and click **Save connection**. Grant the optional OpenAI host permission. Leave **Remember on this device** unchecked to keep the key session-only, or enable it to save an encrypted copy that restores after Chrome restarts. The decryption key also lives in the same Chrome profile.
 3. Return to the article and click **Start reading**. The default is Alloy with OpenAI expressive (`gpt-4o-mini-tts`). Test play/pause/stop, passage skipping, highlighting, and double-click seeking on a non-link word.
-4. Cycle the toolbar speed button and use the 0.75×–4× slider. Toolbar/slider speed changes must reuse audio without new speech requests. Default narration speed in Voice & reading preferences changes the OpenAI generation parameter; changing it while playing can request new speech. Verify 2.3× generation plus 2.3× playback plays the recording at its original rate. Drag near each edge to dock, then collapse and expand the reader.
+4. Cycle the toolbar speed button and use the 0.75×–7× slider. Toolbar/slider speed changes must reuse audio without new speech requests. Default narration speed in Voice & reading preferences changes the OpenAI generation parameter; changing it while playing can request new speech. Verify 2.3× generation plus 2.3× playback plays the recording at its original rate. Drag near each edge to dock, then collapse and expand the reader.
 5. Close Hermes, select a passage, and reopen it. Test pasted text through **Read your own text**. Pasted text has no page-word highlights.
 6. Test another OpenAI voice and optional voice instructions. Improved timing adds transcription requests; lightweight timing does not. No speech or alignment request may occur without consent.
 7. **Disconnect OpenAI** removes the direct key and permission and resets consent. Subsequent playback shows setup guidance and does not fall back to browser speech. Invalid API credentials produce an error, not a different voice.
 8. Close and reopen the reader during the same Chrome session to exercise encrypted audio reuse. Clear the cache in Options. Quit and restart Chrome to verify custom guidance must be supplied again and previous cached audio cannot be decrypted. A remembered API key must restore automatically; a session-only key must require setup. Uncheck Remember and save to delete the saved credential, then verify it does not restore after another restart.
 9. The local Node helper is an optional alternative API transport and also requires a user-owned OpenAI key. It is not required for direct mode.
 
-A page reload or replacement can require reopening the reader. Same-document links should preserve the session. Chrome-restricted pages and PDFs are outside scope. The repository's linked v0.2.0 demo shows an earlier interface; use current screenshots and this release's behavior for review.
+A page reload or replacement can require reopening the reader. Same-document links should preserve the session. Chrome-restricted pages remain outside scope. For PDF review, open a web PDF and invoke Hermes, or open a local selectable-text PDF from Options. Confirm that a separate reading view appears, choose a page, and test highlighting and page jumping. Scans require OCR and complex PDF layout remains heuristic. The repository's linked v0.2.0 demo shows an earlier interface; use current screenshots and this release's behavior for review.
 
 ## Submission files
 
@@ -105,6 +107,6 @@ The screenshot shows the earlier v0.4.0 player and word highlighting; v0.5.0 use
 
 ## Submission handoff
 
-Use the store ZIP with `manifest.json` at its root, not the general unpacked-install ZIP that contains an `extension` folder. Confirm its version is 0.7.0 and it contains only extension assets; no environment files, API keys, local helper, test credentials, or private material. Complete the store's listing, privacy, distribution, and reviewer fields in the publisher dashboard, then verify the resulting status there. Uploading a ZIP alone is not submission or approval.
+Use the store ZIP with `manifest.json` at its root, not the general unpacked-install ZIP that contains an `extension` folder. Confirm its version is 0.8.0 and it contains only extension assets; no environment files, API keys, local helper, test credentials, or private material. Complete the store's listing, privacy, distribution, and reviewer fields in the publisher dashboard, then verify the resulting status there. Uploading a ZIP alone is not submission or approval.
 
 This is a desktop Chrome release. Google's [compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en) says mobile devices cannot install Chrome extensions even in desktop mode. iPhone/iPad support would require a separate app or Safari extension port and its own distribution process.

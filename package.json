@@ -1,6 +1,6 @@
 {
   "name": "hermes-reader",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "description": "A personal, local-first Chrome article reader",
@@ -13,11 +13,13 @@
     "service:restart": "node scripts/service.mjs restart",
     "service:uninstall": "node scripts/service.mjs uninstall",
     "demo": "node scripts/demo-server.mjs",
-    "package": "node scripts/package.mjs"
+    "package": "node scripts/package.mjs",
+    "vendor:pdf": "node scripts/vendor-pdf.mjs"
   },
   "devDependencies": {
     "fake-indexeddb": "^6.2.5",
-    "jsdom": "^26.1.0"
+    "jsdom": "^26.1.0",
+    "pdfjs-dist": "6.4.299"
   },
   "engines": {
     "node": ">=22"

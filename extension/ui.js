@@ -19,7 +19,9 @@
   const number = (value, fallback) => value !== null && value !== '' && Number.isFinite(Number(value)) ? Number(value) : fallback;
   const clamp = (value, min, max) => Math.min(Math.max(min, max), Math.max(min, value));
   const speedLabel = value => `${Number(value.toFixed(2))}×`;
-  const nextSpeed = speed => [1, 1.5, 2, 4].find(value => value > speed + 0.005) || 1;
+  const SPEED_STEPS = [0.75, 1, 1.25, 1.5, 1.75, 2, 2.3, 2.5, 2.7, 3, 3.3, 3.5, 3.7, 4, 4.3, 4.5, 4.7, 5, 5.3, 5.5, 5.7, 6, 6.3, 6.5, 6.7, 7];
+  const nextSpeed = speed => SPEED_STEPS.find(value => value > speed + 0.005) || 7;
+  const previousSpeed = speed => [...SPEED_STEPS].reverse().find(value => value < speed - 0.005) || 0.75;
   const capitalize = value => value.charAt(0).toUpperCase() + value.slice(1);
 
   function create({ title = 'Your article', totalWords = 0, settings = {}, onAction = () => {} } = {}) {
@@ -118,7 +120,7 @@
         <div class="drawer" id="reader-settings" hidden>
           <div class="drawer-top"><h2 class="drawer-title">Hermes</h2><button type="button" class="icon-button drawer-dismiss" aria-label="Close settings">${icon('close')}</button></div>
           <div class="speed-heading"><label class="field-label" for="reader-speed">Reading speed</label><output class="speed-output" for="reader-speed">1×</output></div>
-          <input class="speed-slider" id="reader-speed" type="range" min="0.75" max="4" step="0.05" aria-label="Reading speed">
+          <input class="speed-slider" id="reader-speed" type="range" min="0.75" max="7" step="0.05" aria-label="Reading speed">
           <label class="field-label voice-field" for="reader-voice">Voice<select id="reader-voice"></select></label>
           <label class="follow field-label" for="reader-follow"><span>Auto-scroll with the voice</span><input id="reader-follow" type="checkbox"></label>
           <p class="hint timing-hint"></p>
@@ -291,7 +293,7 @@
     }
 
     function render() {
-      state.speed = clamp(number(state.speed, 1), 0.75, 4);
+      state.speed = clamp(number(state.speed, 1), 0.75, 7);
       state.generationSpeed = clamp(number(state.generationSpeed, 2.3), 0.75, 4);
       state.model = ['gpt-4o-mini-tts','tts-1','tts-1-hd'].includes(state.model) ? state.model : 'gpt-4o-mini-tts';
       const playing = state.status === 'playing', loading = state.status === 'loading';
@@ -318,8 +320,8 @@
       elements.speedOutput.textContent = speedText;
       elements.speedToggle.textContent = speedText;
       elements.speedToggle.setAttribute('aria-label', `Reading speed ${speedText}. Change to ${speedLabel(nextSpeed(state.speed))}`);
-      elements.speedToggle.title = `Change speed to ${speedLabel(nextSpeed(state.speed))}`;
-      paintRange(elements.speed, state.speed, 0.75, 4);
+      elements.speedToggle.title = `${state.speed >= 7 ? "Maximum speed 7×" : `Increase to ${speedLabel(nextSpeed(state.speed))}`} · Shift-click to decrease · Alt+Shift+↑/↓ adjusts by 0.05×`;
+      paintRange(elements.speed, state.speed, 0.75, 7);
       elements.model.value = state.model;
       elements.follow.checked = Boolean(state.follow);
       renderVoices();
@@ -432,7 +434,7 @@
       changeLayout(dock === 'left' || dock === 'right' ? { dock, y: 80 } : { dock, x: undefined, y: undefined });
     }));
     listen(elements.settingsToggle, 'click', () => setDrawer(!drawerOpen));
-    listen(elements.speedToggle, 'click', () => changeSettings({ speed: nextSpeed(state.speed) }));
+    listen(elements.speedToggle, 'click', event => changeSettings({ speed: event.shiftKey ? previousSpeed(state.speed) : nextSpeed(state.speed) }));
     listen(get('.drawer-dismiss'), 'click', () => { setDrawer(false); elements.settingsToggle.focus(); });
     listen(get('.advanced'), 'toggle', () => { if (drawerOpen) panelPosition(); });
     listen(elements.speed, 'input', () => changeSettings({ speed: Number(elements.speed.value) }));
