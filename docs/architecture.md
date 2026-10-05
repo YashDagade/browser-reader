@@ -23,6 +23,7 @@ flowchart LR
 | --- | --- |
 | `extension/manifest.json` | On-demand tab access, local helper permission, optional OpenAI permission |
 | `extension/pdf.html`, `pdf.js`, `pdf-text.mjs`, `pdf-narration.mjs`, `pdf-view.mjs` | On-demand PDF import, local text layout and citation filtering, original-page rendering, and source-coordinate highlighting |
+| `extension/pdf-ink.mjs`, `pdf-ink-store.mjs`, `pdf-export.mjs`, `pdf-title.mjs` | PDF-coordinate pen input, local annotation persistence, lazy annotated-copy export, and metadata/first-page title selection |
 | `extension/extractor.js` | Article scoring, noise filtering, DOM word ranges, and chunking |
 | `extension/content.js` | Page session, keyboard controls, word seeking, and CSS highlights |
 | `extension/ui.js` | Draggable, dockable, collapsible player isolated in a Shadow DOM |
@@ -93,3 +94,12 @@ The visual and narration layers are separate. Canvas rendering preserves the PDF
 `pdf-view.mjs` mounts at most three nearby pages, each canvas capped near three million pixels. Off-screen canvases and text layers are cancelled and released; source coordinates remain available for seeking and follow-scroll before the page renders. Text ranges produce highlight rectangles on rendered pages. A viewport-transform fallback supports off-screen scrolling. The canvas working set is about 36 MB maximum, excluding document data, decoded images, fonts, text, and browser overhead.
 
 The PDF adapter feeds chunks into the shared player without sending its coordinate data to the background. Filter changes retain the current source word when it survives filtering. Runtime messages carry the reader tab ID; the service worker checks it against the sender document and tab in Chrome's trusted extension-context inventory when Chrome omits `sender.tab`. Playback events are addressed to that reader tab and session. The PDF page cannot retrieve API credentials through the internal connection routes. Closing or replacing the PDF stops the old session.
+
+
+## PDF pen and exports
+
+An SVG ink layer shares each mounted page's PDF.js viewport. Pointer coordinates are converted to PDF coordinates and converted back during rendering, including page rotation and zoom. Coalesced pointer samples update one preview per animation frame; finished strokes trigger local saves. Erasing removes a whole stroke and is undoable. Text seeking and follow-scroll are disabled while pen mode is active. Page eviction removes only the visual overlay, not the saved strokes.
+
+`hermes-pdf-ink` stores individual validated stroke records keyed by the document SHA-256 fingerprint and random stroke ID. It saves each edit in its own committed IndexedDB transaction, serializes rapid undo/save races, retains failed writes for retry, and refuses new edits after a failed initial read. Separate tabs adding different strokes cannot overwrite one another's whole document; existing tabs do not live-sync each other's marks. The store is unencrypted, device-local, and separate from credentials and audio. It contains no PDF bytes or narration text. A document has a 200,000-point limit and each stroke has a 10,000-point limit. Undo history lasts for the active reader session.
+
+The export action lazily imports bundled pdf-lib 1.17.1, reads the original PDF bytes from the live PDF.js document, and adds round-capped vector paths in PDF coordinates. It downloads a separate PDF with a meaningful title and annotated filename; it does not mutate the input. These paths are flattened page content, not interoperable editable Ink annotation objects. Existing PDF pages, images, text, rotation, and crop boxes are retained. Export temporarily holds a second document representation in memory. No network or model is used for title inference, drawing, persistence, or export.

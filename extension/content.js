@@ -46,7 +46,7 @@
     scrollParents.set(element,targets);return targets;
   }
   function followWord(range,force=false) {
-    if(!settings.follow||document.hidden||(!force&&Date.now()<manualScrollUntil))return;
+    if((pdfReader&&globalThis.HermesPDF?.isAnnotating?.())||!settings.follow||document.hidden||(!force&&Date.now()<manualScrollUntil))return;
     if(!force&&Date.now()-lastScroll<450)return;
     const element=range.startContainer.parentElement;
     const behavior=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'instant':'smooth';

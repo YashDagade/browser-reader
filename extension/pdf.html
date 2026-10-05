@@ -2,27 +2,39 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hermes · PDF reader</title><link rel="stylesheet" href="pdf.css"></head>
 <body>
 <header>
-<a class="brand" href="pdf.html">HERMES <span>PDF reader</span></a>
-<div id="page-controls" hidden>
-<button type="button" id="previous-page" aria-label="Previous PDF page">‹</button><label for="page-number">Page</label><select id="page-number" aria-label="PDF page"></select><span id="page-count"></span><button type="button" id="next-page" aria-label="Next PDF page">›</button>
-<select id="zoom" aria-label="PDF zoom"><option value="fit">Fit width</option><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option></select>
-<button type="button" id="read-page">Read from here</button><button type="button" id="show-reader">Player</button>
-</div>
+<div class="document-identity"><a class="brand" href="pdf.html" aria-label="Hermes home">H</a><div class="document-label"><h1 id="document-title">Your papers, read aloud.</h1><span>HERMES <span class="identity-dot">·</span> PDF reader</span></div></div>
+<nav id="page-controls" aria-label="Page navigation" hidden>
+<button class="icon-button" type="button" id="previous-page" aria-label="Previous PDF page" title="Previous page"><svg viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></svg></button>
+<div class="page-counter"><select id="page-number" aria-label="PDF page"></select><span id="page-count"></span></div>
+<button class="icon-button" type="button" id="next-page" aria-label="Next PDF page" title="Next page"><svg viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></svg></button>
+</nav>
 <div class="tools">
-<details id="reading-options"><summary>Narration</summary><div class="preferences">
-<strong>What to read</strong>
+<select id="zoom" aria-label="PDF zoom" title="Zoom" hidden><option value="fit">Fit width</option><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option></select>
+<button type="button" id="pen-toggle" aria-label="Pen" aria-pressed="false" title="Annotate (P)" hidden><svg viewBox="0 0 24 24"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15Z"/></svg><span>Pen</span></button>
+<button type="button" id="read-page" aria-label="Read" title="Read from this page" hidden><svg viewBox="0 0 24 24"><path d="m9 5 10 7-10 7Z"/></svg><span>Read</span></button>
+<details id="reading-options"><summary class="icon-button" aria-label="More options" title="More options"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></summary><div class="preferences">
+<div class="menu-actions"><label class="file-button" for="pdf-file">Open PDF<input id="pdf-file" type="file" accept="application/pdf,.pdf"></label><button type="button" id="show-reader">Show player</button><button id="export-pdf" type="button" disabled>Download annotated PDF</button><a id="original" hidden target="_blank" rel="noopener noreferrer">Open original PDF ↗</a></div>
+<strong>Narration</strong>
 <label><input type="checkbox" id="skip-citations" checked> Skip citations</label>
 <label><input type="checkbox" id="read-captions" checked> Figure and table captions</label>
 <label><input type="checkbox" id="read-footnotes"> Footnotes</label>
 <label><input type="checkbox" id="read-references"> Bibliography</label>
-<p>The PDF stays unchanged. Filters apply to speech. Double-click a word to jump there.</p>
-<button id="setup" type="button">Voice & connection settings</button>
+<p>Double-click a word to jump. Press P to annotate.</p><button id="setup" type="button">Voice & connection settings</button>
 </div></details>
-<label class="file-button" for="pdf-file">Open PDF<input id="pdf-file" type="file" accept="application/pdf,.pdf"></label>
-<a id="original" hidden target="_blank" rel="noopener noreferrer">Original ↗</a>
-</div></header>
+</div>
+</header>
+<div id="pen-tools" role="toolbar" aria-label="Pen tools" hidden>
+<div class="ink-colors" aria-label="Ink color"><button data-ink-color="#2457d6" aria-label="Blue ink" aria-pressed="true" style="--ink:#2457d6"></button><button data-ink-color="#252923" aria-label="Black ink" aria-pressed="false" style="--ink:#252923"></button><button data-ink-color="#ca4949" aria-label="Red ink" aria-pressed="false" style="--ink:#ca4949"></button><button data-ink-color="#16856b" aria-label="Green ink" aria-pressed="false" style="--ink:#16856b"></button></div>
+<select id="pen-width" aria-label="Pen width"><option value="1">Fine</option><option value="2" selected>Medium</option><option value="4">Bold</option></select>
+<span class="tool-divider"></span>
+<button class="icon-button" id="eraser" aria-label="Eraser" aria-pressed="false" title="Eraser (E)"><svg viewBox="0 0 24 24"><path d="m14 3 7 7-11 11H5l-4-4L14 3ZM7 11l7 7M10 21h12"/></svg></button>
+<button class="icon-button" id="ink-undo" aria-label="Undo annotation" title="Undo (⌘Z / Ctrl+Z)" disabled><svg viewBox="0 0 24 24"><path d="M8 4 3 9l5 5M3 9h11a6 6 0 0 1 0 12"/></svg></button>
+<button class="icon-button" id="ink-redo" aria-label="Redo annotation" title="Redo (⌘⇧Z / Ctrl+Shift+Z)" disabled><svg viewBox="0 0 24 24"><path d="m16 4 5 5-5 5M21 9H10a6 6 0 0 0 0 12"/></svg></button>
+<span class="tool-divider"></span><button id="ink-status" aria-live="polite" title="Annotations are saved only in this Chrome profile. Click to retry saving.">Saved on device</button><button id="pen-done">Done</button>
+</div>
 <main>
-<section class="intro"><h1 id="document-title">Your papers, read aloud.</h1><p id="status" role="status">Open a PDF to see every page and listen with your OpenAI voice. The PDF is processed on this device.</p><progress id="progress" hidden aria-label="Preparing PDF"></progress><p class="welcome-note">Figures and tables stay in their original layout. Shortcuts: Alt+Shift+↑ / ↓ changes speed by 0.05×.</p></section>
+<section class="intro"><span class="welcome-eyebrow">A LITTLE SPACE TO THINK</span><h2>Read. Listen. Make it yours.</h2><p>Open a paper, hear it in your favorite voice, and put your thoughts in the margins.</p><label class="file-button primary-file" for="pdf-file">Open a PDF</label><p class="welcome-note">Your documents and annotations stay on this device. Only the passages you choose to narrate go to OpenAI.</p></section>
+<div class="statusline"><p id="status" role="status">Choose a PDF to begin.</p><progress id="progress" hidden aria-label="Preparing PDF"></progress></div>
 <article id="pdf-article" aria-label="PDF pages"></article>
 </main>
 <script src="extractor.js"></script><script src="ui.js"></script><script type="module" src="pdf.js"></script>

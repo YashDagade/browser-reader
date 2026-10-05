@@ -13,7 +13,7 @@ Click **Start reading**, follow the highlighted words, and change speed from **0
 
 ## Install and listen
 
-Requires **desktop Chrome 116+**. Version **0.9.0 displays original PDF pages, including figures and tables, with citation-aware narration**. The 0.05× speed shortcuts and playback up to 7× remain available. Your OpenAI model, voice, 2.3× narration default, and optional encrypted credential storage are preserved. All narration requires OpenAI. The previous 0.4.0 package was submitted for review; this update has not been submitted. Install the unpacked extension below. Chrome extensions do not run on iPhone or iPad, even in desktop mode; a Safari version would require a separate port. See [Google's device compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en).
+Requires **desktop Chrome 116+**. Version **0.10.0 adds a PDF pen, local annotation saving, annotated-copy download, readable paper titles, and a centered toolbar**. Original figures, tables, and citation-aware narration are preserved. The 0.05× speed shortcuts and playback up to 7× remain available. Your OpenAI model, voice, 2.3× narration default, and optional encrypted credential storage are preserved. All narration requires OpenAI. The previous 0.4.0 package was submitted for review; this update has not been submitted. Install the unpacked extension below. Chrome extensions do not run on iPhone or iPad, even in desktop mode; a Safari version would require a separate port. See [Google's device compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en).
 
 1. [Download `hermes-extension.zip`](https://github.com/YashDagade/browser-reader/releases/latest/download/hermes-extension.zip) and extract it to a folder you will keep.
 2. Open `chrome://extensions` and enable **Developer mode**.
@@ -82,11 +82,11 @@ Dropping near the left or right edge makes the toolbar vertical; top and bottom 
 
 ## PDFs
 
-Click Hermes while viewing a PDF, including arXiv `/pdf/` links. Hermes opens a separate **PDF reader** showing the original pages: figures, diagrams, tables, equations, and typography stay in place. Keep the original tab open until the file finishes loading. Use the page selector or arrows, then **Read from here** to begin there. Opening the document does not start a speech request.
+Click Hermes while viewing a PDF, including arXiv `/pdf/` links. Hermes opens a separate **PDF reader** showing the original pages: figures, diagrams, tables, equations, and typography stay in place. Keep the original tab open until the file finishes loading. Use the page selector or arrows, then **Read** to begin there. Opening the document does not start a speech request.
 
 Words are highlighted on the printed page as narration advances. Double-click a word to seek; ordinary clicks select text. The player follows the spoken word across pages. The zoom menu offers fit-width and 100–200% views.
 
-**Narration** in the header controls what is spoken:
+**More options (···) → Narration** controls what is spoken:
 
 - Skip numeric citations such as `[14]`, `[15–17]`, and parenthetical author–year citations by default. They remain visible on the PDF.
 - Include figure and table captions by default. Recognizable comparison tables read their row and column labels with **yes/no** for checkmarks and crosses.
@@ -95,6 +95,18 @@ Words are highlighted on the printed page as narration advances. Double-click a 
 Filtering happens locally, without an extra AI call or rewriting the paper. Changing these filters changes the narration text and may require generating different audio; changing playback speed still reuses audio. Citation detection, columns, footnotes, and table reading use heuristics. Unusual references, mathematical notation, diagrams, or complex numeric tables can still read imperfectly. Inspect the original page when precision matters. Scanned pages are displayed but need OCR before narration; Hermes does not provide OCR.
 
 For downloaded PDFs, or if a site blocks direct access, open Hermes **Options → Open a PDF in Hermes**, then choose **Open PDF** and select the file. No file-access permission, upload service, or Node process is needed. The PDF itself stays on your device; only narration passages go to OpenAI after you press Play with consent.
+
+### Write on your papers
+
+Click **Pen** or press **P**, then draw directly on a page with a mouse, trackpad, or pointer-compatible stylus. Choose one of four colors and Fine, Medium, or Bold ink. **E** switches the whole-stroke eraser; **⌘Z / Ctrl+Z** undoes and **⌘⇧Z / Ctrl+Shift+Z** redoes while the pen is active. **Done** or **Escape** returns to selecting text. Automatic following pauses while annotating, so the paper stays still while you write.
+
+Marks save automatically in this Chrome profile. Wait for **Saved on device** before closing. Reopening the **exact same PDF file** restores them, including after a Chrome restart; a changed file is a different document. Marks stay aligned through zoom and page navigation. Undo/redo history lasts for the current reader session; the eraser can remove previously saved marks after reopening.
+
+Use **More options (···) → Download annotated PDF** to save a separate copy containing the original pages and your ink. Exported marks become part of the page drawing; they are not editable annotation objects in other PDF apps. Your original PDF is unchanged. Hermes keeps its editable marks separately.
+
+Annotations are **local and unencrypted**, are never sent to OpenAI, and do not sync across profiles or devices. Storage contains pen coordinates, style, page number, and a document fingerprint, not PDF bytes, titles, or URLs. Chrome can remove site data; removing the extension also removes its local annotations. Keep exported copies of important notes. Each document is limited to 200,000 pen points; the exporter loads only when used and may temporarily use extra memory for large PDFs.
+
+The header uses PDF metadata or the first-page title instead of an arXiv filename when it can identify a title. The page counter stays centered independently of the title and action buttons.
 
 PDF.js loads only in this reader. At most three nearby pages retain canvases, capped at about three million pixels each. Those canvas buffers total about 36 MB; the document, images, fonts, text, and browser add memory beyond that. The document worker stays alive while the PDF is open and is released on close or replacement. Limits: 50 MiB, 500 pages, and two million extracted characters. Password-protected PDFs need an unlocked copy. Web PDFs with unrecognized URLs can still be downloaded and opened manually.
 
@@ -128,9 +140,9 @@ npm run check:secrets
 npm run package
 ```
 
-Plain JavaScript, HTML, and CSS; `jsdom` is development-only. PDF.js 6.4.299 is vendored under its Apache-2.0 license; `npm run vendor:pdf` reproduces the bundled renderer, worker, fonts, CMaps, and image decoders from the pinned dependency. Tests compare the vendored files to that dependency. Mocked tests spend no API credits. Packaging checks the exact files for credential patterns and writes `output/hermes-extension.zip` for unpacked installs and `output/hermes-chrome-web-store.zip` with a root manifest for store submission. See the [submission draft and assets](docs/chrome-web-store-listing.md). See [the architecture notes](docs/architecture.md). Reproducible contributions are welcome; keep private content and credentials out of issues.
+Plain JavaScript, HTML, and CSS; `jsdom` is development-only. PDF.js 6.4.299 is vendored under its Apache-2.0 license; `npm run vendor:pdf` reproduces the bundled renderer, worker, fonts, CMaps, and image decoders from the pinned dependency. pdf-lib 1.17.1 is bundled under MIT and loads only to export annotated copies; the same command reproduces it and its notices. Tests compare the vendored files to that dependency. Mocked tests spend no API credits. Packaging checks the exact files for credential patterns and writes `output/hermes-extension.zip` for unpacked installs and `output/hermes-chrome-web-store.zip` with a root manifest for store submission. See the [submission draft and assets](docs/chrome-web-store-listing.md). See [the architecture notes](docs/architecture.md). Reproducible contributions are welcome; keep private content and credentials out of issues.
 
-Hermes is licensed under [MIT](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md) for PDF.js.
+Hermes is licensed under [MIT](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md) for PDF.js and pdf-lib.
 
 ## Demo
 

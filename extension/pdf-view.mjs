@@ -1,8 +1,8 @@
 // Original-page rendering with a bounded canvas working set. Narration retains
 // source coordinates even when a page is not currently mounted.
 export class PDFView {
-  constructor({pdfjs,document:pdf,model,container,onPage=()=>{},onSeek=()=>{}}) {
-    Object.assign(this,{pdfjs,pdf,model,container,onPage,onSeek});
+  constructor({pdfjs,document:pdf,model,container,onPage=()=>{},onSeek=()=>{},onMount=()=>{},onUnmount=()=>{}}) {
+    Object.assign(this,{pdfjs,pdf,model,container,onPage,onSeek,onMount,onUnmount});
     this.words=[];this.mounted=new Map();this.desired=[];this.current=1;this.active=-1;this.zoom='fit';this.epoch=0;this.dead=false;
     this.shells=model.sourcePages.map(source=>{
       const shell=document.createElement('section');shell.className='pdf-page';shell.id=`page-${source.number}`;shell.dataset.page=source.number;shell.setAttribute('aria-label',`Page ${source.number}`);
@@ -68,7 +68,7 @@ export class PDFView {
       await Promise.all([entry.renderTask.promise,entry.textLayer.render()]);
       if(entry.cancelled||this.dead||epoch!==this.epoch)return;
       let position=0;source.content.items.forEach((item,index)=>{if(typeof item.str==='string'){const div=entry.textLayer.textDivs[position++];if(div){entry.divs.set(index,div);div.dataset.pdfItem=index;}}});
-      surface.dataset.state='ready';this.paint();
+      surface.dataset.state='ready';this.onMount(entry);this.paint();
     } catch(error) {
       if(entry.cancelled||this.dead||epoch!==this.epoch)return;
       surface.dataset.state='error';surface.replaceChildren();
@@ -79,7 +79,7 @@ export class PDFView {
   }
   evict(number) {
     const entry=this.mounted.get(number);if(!entry)return;
-    entry.cancelled=true;entry.renderTask?.cancel();entry.textLayer?.cancel();
+    this.onUnmount(number);entry.cancelled=true;entry.renderTask?.cancel();entry.textLayer?.cancel();
     if(entry.canvas){entry.canvas.width=0;entry.canvas.height=0;}
     entry.surface.replaceChildren();delete entry.surface.dataset.state;entry.page?.cleanup();this.mounted.delete(number);
   }
@@ -116,6 +116,7 @@ export class PDFView {
   clear(){this.active=-1;this.paint();}
   jump(number){this.shells[number-1]?.shell.scrollIntoView({behavior:'instant',block:'start'});this.updateWindow();}
   seekFromPoint(event) {
+    if(this.container.classList.contains('inking'))return;
     if(!event.isTrusted||event.button!==0||event.metaKey||event.ctrlKey)return;
     const point=document.caretRangeFromPoint?.(event.clientX,event.clientY);
     const span=point?.startContainer.parentElement?.closest('[data-pdf-item]'),shell=span?.closest('[data-page]');if(!span||!shell)return;

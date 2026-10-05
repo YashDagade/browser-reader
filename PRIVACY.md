@@ -1,6 +1,6 @@
 # Hermes privacy policy
 
-Updated October 5, 2026. Applies to Hermes 0.9.0 and later unless replaced by a newer policy.
+Updated October 5, 2026. Applies to Hermes 0.10.0 and later unless replaced by a newer policy.
 
 Hermes reads webpage articles, selected passages, pasted text, and selectable PDF text aloud. All narration uses OpenAI voices with your own API key. There is no browser or on-device voice fallback. The extension sends no reading content or credentials to its developer. There is no Hermes account, developer-operated data service, analytics, advertising, or sale of user data.
 
@@ -13,6 +13,7 @@ Hermes reads webpage articles, selected passages, pasted text, and selectable PD
 | Current page title and URL | Held temporarily on your device with the reading session to identify the active article and detect navigation. Hermes does not build a browsing-history log or send these fields as OpenAI request metadata. The text you narrate can itself contain titles or URLs. |
 | Your OpenAI API key | Used only to authenticate your requests to OpenAI. Direct mode uses browser-session memory and, only if you enable Remember on this device, an encrypted persistent copy in this Chrome profile. An optional local helper instead reads your private environment file. No shared developer key is provided. |
 | Custom pronunciation or delivery guidance | Held in browser-session memory and included with supported OpenAI speech requests. It is not retained with persistent preferences. |
+| PDF pen annotations | Pen coordinates, color, width, page number, creation time, a random stroke ID, and a SHA-256 document fingerprint are saved in a separate local IndexedDB database. This storage is unencrypted and persists across restarts; it contains no PDF bytes, extracted text, document title, URL, or credentials. Marks are never sent to OpenAI or synced. Download annotated PDF creates a separate local copy with ink drawn into the original pages. |
 | Generated audio and timing data | Used for playback, highlighting, and repeat listening. Improved timing sends generated audio to OpenAI transcription to obtain word timestamps. Local cached audio and numeric timings are encrypted as described below. |
 | Nonsecret preferences | Voice/model choice, speed, layout, and other reading preferences are saved locally in your Chrome profile. Hermes does not use Chrome Sync. |
 
@@ -41,6 +42,8 @@ Only the current browser session has the encryption key. Closing and reopening t
 The optional local helper separately holds completed audio and timing results in memory, with a 16 MiB audio limit and ten-minute expiry. Speech text and guidance are handled in the helper's memory for requests and cache lookup. Exiting the helper clears its memory. A key supplied through your own `.env.local` file remains in that file until you remove it; the extension cannot delete that file for you. Private environment files are excluded from source and extension packages.
 
 ## Deletion, security, and limited use
+
+PDF marks remain until you erase them, Chrome removes the data, or you remove the extension. Reopen the same PDF and use **Pen → Eraser** to remove saved strokes. Undo/redo history is limited to the current reader session. Download an annotated copy to retain notes outside Chrome; deleting local marks does not delete downloaded copies. Annotations use a separate store, so clearing saved audio or disconnecting OpenAI does not erase your notes.
 
 Use **Clear saved audio** in Options to remove the encrypted extension cache. Stop reading first if you want to avoid new audio being cached. **Disconnect OpenAI** deletes the encrypted credential and its decryption key, removes the memory copy and optional OpenAI permission, and resets consent; it is separate from clearing audio. Remove the extension to remove its Chrome-managed storage. Delete any helper environment file yourself and stop the helper when you no longer want to use it.
 

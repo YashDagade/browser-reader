@@ -276,3 +276,12 @@ test('PDF source adapter highlights original coordinates, jumps by page, and pre
  assert.equal(app.commands.findLast(c=>c.action==='seek').wordIndex,1);assert.equal(app.commands.at(-1).action,'play');
  const payload=app.commands.findLast(c=>c.action==='load').article;assert.equal(payload.totalWords,2);assert.equal(payload.words,undefined);
 });
+
+test('PDF pen mode freezes follow-scroll while keeping word highlights live',async t=>{
+ const app=await harness(t,{pdf:true});await app.window.__hermesReader.close();
+ let annotating=true;const scrolls=[],highlights=[],surface=app.window.document.querySelector('p');
+ app.window.scrollBy=options=>scrolls.push(options);
+ app.window.HermesPDF={extract:()=>({title:'Paper',source:'pdf',lang:'en',words:[{text:'First',page:1},{text:'Second',page:1}],chunks:[{text:'First Second',start:0,end:2}]}),clear:()=>{},isAnnotating:()=>annotating,highlight:index=>{highlights.push(index);return {startContainer:surface,getBoundingClientRect:()=>({top:900,bottom:925,left:100,right:160})};}};
+ await app.window.__hermesReader.open();app.state({status:'playing',wordIndex:0});assert.equal(highlights.at(-1),0);assert.equal(scrolls.length,0);
+ annotating=false;app.state({status:'playing',wordIndex:1});assert.equal(highlights.at(-1),1);assert.equal(scrolls.length,1);
+});

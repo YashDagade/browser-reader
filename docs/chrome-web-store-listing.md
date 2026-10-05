@@ -1,6 +1,6 @@
 # Chrome Web Store submission
 
-**Target version: 0.9.0. Status: prepared, not yet submitted.** This API-only update adds original PDF page rendering, figures and tables, source-mapped highlighting, and local citation filtering; it retains 0.05× speed shortcuts and playback up to 7×. It preserves the 2.3× narration default and optional encrypted credential storage and replaces the 0.4.0 package previously submitted on September 20, 2026. The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. Final submission and approval must be verified in the dashboard. The publisher's account address is intentionally absent from public source.
+**Target version: 0.10.0. Status: prepared, not yet submitted.** This API-only update adds pen annotations, local ink persistence, annotated PDF downloads, meaningful paper titles, and a centered header on top of original-page rendering and citation-aware narration; it retains 0.05× speed shortcuts and playback up to 7×. It preserves the 2.3× narration default and optional encrypted credential storage and replaces the 0.4.0 package previously submitted on September 20, 2026. The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. Final submission and approval must be verified in the dashboard. The publisher's account address is intentionally absent from public source.
 
 ## Listing fields
 
@@ -26,6 +26,7 @@ Connect your own OpenAI API key for expressive AI narration. All voices use Open
 Reading controls:
 
 - Adjust playback from 0.75× to 7× without regenerating audio. Choose a default OpenAI narration speed in voice preferences (2.3× initially); changing that default can incur new speech requests.
+- Write on PDF pages with a pen, colors, width controls, an eraser, and undo/redo. Marks save locally and can be downloaded in an annotated PDF copy.
 - Open web PDFs in a Hermes reading view, or choose a local PDF from Options. Extraction happens locally; PDFs are not uploaded to a document service.
 - Adjust speed precisely with Alt+Shift+Up/Down (Option on Mac), in 0.05× increments.
 - Follow highlighted words, double-click a word to seek, and skip between passages.
@@ -68,7 +69,7 @@ Use the dashboard's actual field labels. These declarations describe data handle
 | --- | --- |
 | `activeTab` | Read the current page, or fetch its PDF from the granted origin, only after the user invokes Hermes; no blanket access to all sites. |
 | `scripting` | Inject the bundled extractor, player, and highlighting controls into that invoked tab. |
-| `storage` | Store nonsecret preferences, temporary session state, credentials in memory with optional encrypted persistence, and the bounded encrypted audio cache. No Chrome Sync is used. |
+| `storage` | Store nonsecret preferences, temporary session state, credentials in memory with optional encrypted persistence, and the bounded encrypted audio cache. PDF pen marks persist unencrypted in a separate local IndexedDB store. No Chrome Sync is used. |
 | `offscreen` | Play generated audio independently of the page UI and manage its bounded audio resources. The document is released on stop/close or idle cleanup. |
 | `contextMenus` | Provide the user-invoked “Read with Hermes” page/selection action. |
 | `alarms` | Release an inactive audio document after three idle minutes; not used to poll browsing activity. |
@@ -91,7 +92,7 @@ Hermes has no login or subscription. Audio playback requires a reviewer-owned Op
 8. Close and reopen the reader during the same Chrome session to exercise encrypted audio reuse. Clear the cache in Options. Quit and restart Chrome to verify custom guidance must be supplied again and previous cached audio cannot be decrypted. A remembered API key must restore automatically; a session-only key must require setup. Uncheck Remember and save to delete the saved credential, then verify it does not restore after another restart.
 9. The local Node helper is an optional alternative API transport and also requires a user-owned OpenAI key. It is not required for direct mode.
 
-A page reload or replacement can require reopening the reader. Same-document links should preserve the session. Chrome-restricted pages remain outside scope. For PDF review, open a web PDF and invoke Hermes, or open a local selectable-text PDF from Options. Confirm that a separate reading view appears, choose a page, and test highlighting and page jumping. Scans require OCR and complex PDF layout remains heuristic. The repository's linked v0.2.0 demo shows an earlier interface; use current screenshots and this release's behavior for review.
+A page reload or replacement can require reopening the reader. Same-document links should preserve the session. Chrome-restricted pages remain outside scope. For PDF review, open a web PDF and invoke Hermes, or open a local selectable-text PDF from Options. Confirm that a separate reading view appears, choose a page, and test highlighting and page jumping. Test Pen, undo/redo, erasure, zoom, reopening the same file, and Download annotated PDF. Confirm pen marks are retained locally after restarting Chrome; they are unencrypted and not synced. Scans require OCR and complex PDF layout remains heuristic. The repository's linked v0.2.0 demo shows an earlier interface; use current screenshots and this release's behavior for review.
 
 ## Submission files
 
@@ -107,6 +108,6 @@ The screenshot shows the earlier v0.4.0 player and word highlighting; v0.5.0 use
 
 ## Submission handoff
 
-Use the store ZIP with `manifest.json` at its root, not the general unpacked-install ZIP that contains an `extension` folder. Confirm its version is 0.9.0 and it contains only extension assets; no environment files, API keys, local helper, test credentials, or private material. Complete the store's listing, privacy, distribution, and reviewer fields in the publisher dashboard, then verify the resulting status there. Uploading a ZIP alone is not submission or approval.
+Use the store ZIP with `manifest.json` at its root, not the general unpacked-install ZIP that contains an `extension` folder. Confirm its version is 0.10.0 and it contains only extension assets; no environment files, API keys, local helper, test credentials, or private material. Complete the store's listing, privacy, distribution, and reviewer fields in the publisher dashboard, then verify the resulting status there. Uploading a ZIP alone is not submission or approval.
 
 This is a desktop Chrome release. Google's [compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en) says mobile devices cannot install Chrome extensions even in desktop mode. iPhone/iPad support would require a separate app or Safari extension port and its own distribution process.

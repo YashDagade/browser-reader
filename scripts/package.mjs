@@ -12,7 +12,7 @@ function visit(directory) {
     const name=path.join(directory,entry.name);
     if(entry.isSymbolicLink())throw Error(`Refusing symlink: ${name}`);
     if(entry.isDirectory())visit(name);
-    else if(entry.name==='manifest.json'||pdfAssets.test(name)||allowed.has(path.extname(entry.name)))files.push(name);
+    else if(entry.name==='manifest.json'||pdfAssets.test(name)||/^extension\/vendor\/pdf-lib\/LICENSE(?:_[A-Z_]+)?\.txt$/.test(name)||allowed.has(path.extname(entry.name)))files.push(name);
     else throw Error(`Unexpected extension asset: ${name}`);
   }
 }

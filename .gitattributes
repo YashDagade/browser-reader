@@ -1,2 +1,3 @@
 # Preserve upstream distribution bytes and license formatting.
 extension/vendor/pdfjs/** linguist-vendored -whitespace
+extension/vendor/pdf-lib/** linguist-vendored -whitespace
