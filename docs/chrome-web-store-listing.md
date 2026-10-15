@@ -1,6 +1,6 @@
 # Chrome Web Store submission
 
-**Target version: 0.10.0. Status: prepared, not yet submitted.** This API-only update adds pen annotations, local ink persistence, annotated PDF downloads, meaningful paper titles, and a centered header on top of original-page rendering and citation-aware narration; it retains 0.05× speed shortcuts and playback up to 7×. It preserves the 2.3× narration default and optional encrypted credential storage and replaces the 0.4.0 package previously submitted on September 20, 2026. The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. Final submission and approval must be verified in the dashboard. The publisher's account address is intentionally absent from public source.
+**Target version: 0.11.0. Status: prepared, not yet submitted.** This API-only update improves continuous listening with an adaptive audio reserve, preloaded chunk transitions, and immediate queue refill after pause/resume. It retains original PDF pages, local pen annotations, and finer speed controls. It preserves the 2.3× narration default and optional encrypted credential storage and replaces the 0.4.0 package previously submitted on September 20, 2026. The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. Final submission and approval must be verified in the dashboard. The publisher's account address is intentionally absent from public source.
 
 ## Listing fields
 
@@ -44,7 +44,7 @@ Privacy and setup:
 - Audio is cached locally with encryption for reuse within the same browser session. Clear it from Options.
 - No Hermes account, analytics, advertising, or developer-operated content service.
 
-Designed for desktop Chrome. Chrome internal pages and the Web Store are unsupported. PDFs open in a separate Hermes original-page reading view; scanned pages need OCR first and complex layout may read imperfectly. Hermes does not bypass paywalls. OpenAI needs an initial audio buffer, and fast playback can sometimes catch up with generation. This package does not run on iPhone, iPad, or Safari.
+Designed for desktop Chrome. Chrome internal pages and the Web Store are unsupported. PDFs open in a separate Hermes original-page reading view; scanned pages need OCR first and complex layout may read imperfectly. Hermes does not bypass paywalls. OpenAI needs an initial audio buffer, and network/service delays or listening faster than generation can still exhaust the bounded audio reserve. This package does not run on iPhone, iPad, or Safari.
 
 ## Privacy practices fields
 
@@ -108,6 +108,6 @@ The screenshot shows the earlier v0.4.0 player and word highlighting; v0.5.0 use
 
 ## Submission handoff
 
-Use the store ZIP with `manifest.json` at its root, not the general unpacked-install ZIP that contains an `extension` folder. Confirm its version is 0.10.0 and it contains only extension assets; no environment files, API keys, local helper, test credentials, or private material. Complete the store's listing, privacy, distribution, and reviewer fields in the publisher dashboard, then verify the resulting status there. Uploading a ZIP alone is not submission or approval.
+Use the store ZIP with `manifest.json` at its root, not the general unpacked-install ZIP that contains an `extension` folder. Confirm its version is 0.11.0 and it contains only extension assets; no environment files, API keys, local helper, test credentials, or private material. Complete the store's listing, privacy, distribution, and reviewer fields in the publisher dashboard, then verify the resulting status there. Uploading a ZIP alone is not submission or approval.
 
 This is a desktop Chrome release. Google's [compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en) says mobile devices cannot install Chrome extensions even in desktop mode. iPhone/iPad support would require a separate app or Safari extension port and its own distribution process.

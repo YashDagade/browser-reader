@@ -3,8 +3,14 @@
   'use strict';
 
   const timing = globalThis.HermesTiming;
-  const MAX_REQUESTS = 2;
-  const LOOKAHEAD = 3;
+  const MAX_REQUESTS = 4;
+  const LOOKAHEAD = 16;
+  const BUFFER_SECONDS = 60;
+  let requestSeconds = 4;
+  let lastRefillAt = 0;
+  let prepared = null;
+  // Do not repeatedly regenerate speculative audio that cannot fit in RAM.
+  const budgetBlocked = new Set();
   const MAX_CACHE_BYTES = 12 * 1024 * 1024;
   const alignmentQueue = [];
   let activeAlignments = 0;
@@ -56,7 +62,8 @@
     const entry = cache.get(audio ? currentChunk : chunkForWord(wordIndex));
     return { status, wordIndex, totalWords, ...settings, error,
       timingSource: settings.syncMode === 'precise' && entry?.timingSource === 'aligned' ? 'aligned' : 'estimated',
-      remainingSeconds: remainingSeconds() };
+      remainingSeconds: remainingSeconds(), bufferedSeconds: bufferedSeconds(),
+      bufferTargetSeconds: bufferTarget(), pendingSpeech: activeRequests };
   }
 
   function stopTick() {
@@ -69,6 +76,7 @@
     tickTimer = setInterval(() => {
       if (status !== 'playing' || !audio) { stopTick(); return; }
       updateWord();
+      if (Date.now() - lastRefillAt >= 400) maintainCache(currentChunk);
       publish(false);
     }, 40);
   }
@@ -105,8 +113,19 @@
     return new DOMException('Playback changed', 'AbortError');
   }
 
-  function destroyAudio() {
+  function disposePlayer(player) {
+    player.onended = null; player.onerror = null;
+    player.pause(); player.removeAttribute('src'); player.load();
+  }
+
+  function discardPrepared() {
+    if (prepared) disposePlayer(prepared.player);
+    prepared = null;
+  }
+
+  function destroyAudio(keepPrepared = false) {
     stopTick();
+    if (!keepPrepared) discardPrepared();
     if (!audio) return;
     audio.onended = null;
     audio.onerror = null;
@@ -118,6 +137,7 @@
   }
 
   function release(entry) {
+    if (prepared?.entry === entry) discardPrepared();
     entry.controller?.abort();
     cancelEntryAlignment(entry);
     const queuedSpeech = queue.indexOf(entry);
@@ -132,6 +152,7 @@
 
   function clearCache() {
     generation += 1;
+    budgetBlocked.clear();
     for (const entry of cache.values()) release(entry);
     cache.clear();
     queue.length = 0;
@@ -287,6 +308,7 @@
       }
       if (entry.generation !== generation || cache.get(entry.index) !== entry || controller.signal.aborted) throw abortError();
       if (!globalThis.HermesSpeech?.speech) throw new Error('The speech connection could not be loaded. Reload the extension.');
+      const requestedAt = Date.now();
       const response = await globalThis.HermesSpeech.speech(entry.payload, controller.signal);
       if (!response.ok) {
         let detail;
@@ -300,6 +322,9 @@
       if (entry.generation !== generation || cache.get(entry.index) !== entry) throw abortError();
       if (buffer.byteLength < 44) throw new Error('The speech service returned empty audio. Please try again.');
       if (buffer.byteLength > MAX_CACHE_BYTES) throw new Error('This audio passage is too large. Try a shorter selection.');
+      const elapsed = (Date.now() - requestedAt) / 1000;
+      // React quickly to a slow response, then decay gradually after recovery.
+      requestSeconds = Math.max(elapsed, requestSeconds * 0.85 + elapsed * 0.15);
       entry.window = timing.inspectWav(buffer);
       entry.duration = entry.window.duration;
       if (!entry.duration) throw new Error('The speech service returned unsupported audio. Please try again.');
@@ -322,7 +347,7 @@
   }
 
   function pump() {
-    while (wantsPlayback && activeRequests < MAX_REQUESTS && queue.length) {
+    while (wantsPlayback && activeRequests < requestLimit() && queue.length) {
       const entry = queue.shift();
       if (entry.generation !== generation || cache.get(entry.index) !== entry) continue;
       activeRequests += 1;
@@ -332,10 +357,14 @@
         entry.resolve(result);
       }, (cause) => {
         entry.phase = 'failed';
-        if (cache.get(entry.index) === entry) cache.delete(entry.index);
+        entry.failure = cause;
         entry.reject(cause);
       }).finally(() => {
         activeRequests -= 1;
+        if (entry.generation === generation && wantsPlayback) {
+          maintainCache(audio ? currentChunk : chunkForWord(wordIndex));
+          primeNext();
+        }
         pump();
       });
     }
@@ -377,60 +406,127 @@
     for (const [index, entry] of removable) {
       if (bytes <= MAX_CACHE_BYTES) break;
       bytes -= entry.bytes || 0;
+      budgetBlocked.add(index);
       release(entry);
       cache.delete(index);
     }
   }
 
-  function maintainCache(index) {
-    for (const [key, entry] of cache) {
-      if (key < index - 1 || key > index + LOOKAHEAD) {
-        release(entry);
-        cache.delete(key);
-      }
-    }
-    for (let next = index + 1; next <= Math.min(chunks.length - 1, index + LOOKAHEAD); next += 1) {
-      ensureChunk(next).catch(() => {});
-    }
+  function bufferTarget() { return Math.min(90, Math.max(BUFFER_SECONDS, requestSeconds * 3)); }
+
+  function chunkSeconds(index) {
+    const entry = cache.get(index);
+    return entry?.duration ? entry.duration / playbackRate(entry)
+      : (chunks[index].end - chunks[index].start) * secondsPerWord / settings.speed;
   }
 
-  function waitForMetadata(player) {
-    if (player.readyState >= 1) return Promise.resolve();
+  function bufferedSeconds() {
+    const index = audio ? currentChunk : chunkForWord(wordIndex);
+    let seconds = 0;
+    for (let next = index; next < Math.min(chunks.length, index + LOOKAHEAD + 1); next++) {
+      const entry = cache.get(next);
+      if (entry?.phase !== 'ready') break;
+      const offset = next === index ? (audio?.currentTime || entry.timings?.[wordIndex - chunks[index].start] || 0) : 0;
+      seconds += Math.max(0, entry.duration - offset) / playbackRate(entry);
+    }
+    return seconds;
+  }
+
+  function requestLimit() {
+    // Keep two producers on healthy connections; catch up before the buffer runs dry.
+    return bufferedSeconds() < Math.max(15, requestSeconds * 2) ? MAX_REQUESTS : 2;
+  }
+
+  function maintainCache(index) {
+    if (!wantsPlayback || index < 0 || !chunks[index]) return;
+    lastRefillAt = Date.now();
+    for (const [key, entry] of cache) {
+      if ((key < index && (key < index - 1 || entry.phase !== 'ready')) || key > index + LOOKAHEAD) {
+        release(entry); cache.delete(key); budgetBlocked.delete(key);
+      }
+    }
+    let bytes = 0;
+    const estimatedBytes = key => Math.ceil((chunks[key].end - chunks[key].start) * secondsPerWord / settings.generationSpeed * 48000) + 44;
+    for (const [key, entry] of cache) bytes += entry.bytes || estimatedBytes(key);
+    let seconds = 0;
+    for (let next = index + 1; next <= Math.min(chunks.length - 1, index + LOOKAHEAD); next++) {
+      if (seconds >= bufferTarget() && next > index + 3) break;
+      if (!cache.has(next)) {
+        const size = estimatedBytes(next);
+        if (budgetBlocked.has(next) || bytes + size > MAX_CACHE_BYTES * 0.9) break;
+        bytes += size;
+        ensureChunk(next).catch(() => {});
+      }
+      seconds += chunkSeconds(next);
+    }
+    primeNext();
+  }
+
+  function primeNext() {
+    if (!wantsPlayback) return;
+    if (!audio && prepared?.entry.index === chunkForWord(wordIndex)) return;
+    const index = (audio ? currentChunk : chunkForWord(wordIndex)) + 1;
+    const entry = cache.get(index);
+    if (prepared?.entry === entry && entry) return;
+    if (prepared) discardPrepared();
+    if (entry?.phase !== 'ready') return;
+    const player = new Audio(entry.url);
+    player.preload = 'auto'; player.preservesPitch = true; player.playbackRate = playbackRate(entry);
+    const record = { entry, player };
+    prepared = record;
+    record.ready = waitForMetadata(player).then(() => {
+      if (prepared !== record) throw abortError();
+      player.currentTime = entry.timings[0] || 0;
+      return waitForMetadata(player, 3);
+    });
+    record.ready.catch(() => {});
+  }
+
+  function waitForMetadata(player, minimum = 1) {
+    const readyEvent = minimum === 1 ? 'loadedmetadata' : 'canplay';
+    if (player.readyState >= minimum) return Promise.resolve();
     return new Promise((resolve, reject) => {
       let timer;
       const cleanup = () => {
         clearTimeout(timer);
-        player.removeEventListener('loadedmetadata', ready);
+        player.removeEventListener(readyEvent, ready);
         player.removeEventListener('error', failed);
         player.removeEventListener('emptied', cancelled);
       };
       const ready = () => { cleanup(); resolve(); };
       const failed = () => { cleanup(); reject(new Error('The returned audio could not be decoded.')); };
       const cancelled = () => { cleanup(); reject(abortError()); };
-      player.addEventListener('loadedmetadata', ready, { once: true });
+      player.addEventListener(readyEvent, ready, { once: true });
       player.addEventListener('error', failed, { once: true });
       player.addEventListener('emptied', cancelled, { once: true });
       timer = setTimeout(failed, 15000);
     });
   }
 
-  async function startAtWord() {
+  async function startAtWord({ transition = false } = {}) {
     if (!wantsPlayback || !chunks.length) return;
     const thisOperation = ++operation;
     const thisGeneration = generation;
     const targetWord = wordIndex;
     const index = chunkForWord(targetWord);
-    destroyAudio();
-    status = 'loading';
+    destroyAudio(transition);
+    if (!transition || prepared?.entry.index !== index || prepared.player.readyState < 3) {
+      status = 'loading';
+      publish();
+    }
     error = null;
-    publish();
     try {
       const pending = ensureChunk(index, true);
       // Start the requested chunk first, then overlap bounded preparation.
       maintainCache(index);
       const entry = await pending;
       if (thisOperation !== operation || thisGeneration !== generation || !wantsPlayback) return;
-      const player = new Audio(entry.url);
+      const warm = prepared?.entry === entry ? prepared : null;
+      // Wait while the prepared record still owns its cancellation guard.
+      if (warm) await warm.ready;
+      if (thisOperation !== operation || thisGeneration !== generation || !wantsPlayback) return;
+      if (warm) prepared = null;
+      const player = warm?.player || new Audio(entry.url);
       audio = player;
       currentChunk = index;
       player.preload = 'auto';
@@ -448,7 +544,7 @@
           return;
         }
         wordIndex = chunks[index + 1].start;
-        startAtWord();
+        startAtWord({ transition: true });
       };
       player.onerror = () => {
         if (audio === player) {
@@ -465,13 +561,15 @@
         }
       }
       const offset = Math.max(0, Math.min(entry.timings.length - 2, targetWord - chunks[index].start));
-      player.currentTime = entry.timings[offset] || 0;
+      const position = entry.timings[offset] || 0;
+      if (!warm || Math.abs(player.currentTime - position) > 0.02) player.currentTime = position;
       await player.play();
       if (thisOperation !== operation || !wantsPlayback) {
         if (audio !== player || !wantsPlayback) player.pause();
         return;
       }
       status = 'playing';
+      maintainCache(index);
       startTick();
       scheduleAlignment(entry, true);
       pumpAlignment();
@@ -498,6 +596,8 @@
           return;
         }
         status = 'playing';
+        maintainCache(currentChunk);
+        pump();
         startTick();
         const entry = cache.get(currentChunk);
         if (entry) scheduleAlignment(entry, true);
@@ -544,7 +644,7 @@
     // A paused jump must also cancel unrelated preparation.
     const index = chunkForWord(wordIndex);
     for (const [key, entry] of cache) {
-      if (key < index - 1 || key > index + LOOKAHEAD) { release(entry); cache.delete(key); }
+      if ((key < index && (key < index - 1 || entry.phase !== 'ready')) || key > index + LOOKAHEAD) { release(entry); cache.delete(key); }
     }
     error = null;
     if (wantsPlayback) startAtWord();
@@ -586,6 +686,8 @@
         }
       }
       if (audio) audio.playbackRate = playbackRate();
+      if (prepared) prepared.player.playbackRate = playbackRate(prepared.entry);
+      if (wantsPlayback) { maintainCache(audio ? currentChunk : chunkForWord(wordIndex)); pump(); }
       publish();
     }
   }
@@ -603,6 +705,8 @@
     totalWords = chunks.length ? Math.max(0, Number(message.totalWords) || chunks.at(-1).end) : 0;
     wordIndex = 0;
     secondsPerWord = 0.36;
+    requestSeconds = 4;
+    lastRefillAt = 0;
     status = 'idle';
     error = null;
     configure(message.settings || {});

@@ -1,6 +1,6 @@
 # Hermes privacy policy
 
-Updated October 5, 2026. Applies to Hermes 0.10.0 and later unless replaced by a newer policy.
+Updated October 15, 2026. Applies to Hermes 0.11.0 and later unless replaced by a newer policy.
 
 Hermes reads webpage articles, selected passages, pasted text, and selectable PDF text aloud. All narration uses OpenAI voices with your own API key. There is no browser or on-device voice fallback. The extension sends no reading content or credentials to its developer. There is no Hermes account, developer-operated data service, analytics, advertising, or sale of user data.
 
@@ -37,7 +37,7 @@ Custom voice instructions and the separate audio-cache encryption key always rem
 
 For repeat listening within the same browser session, Hermes encrypts audio and numeric word-timing data with **AES-256-GCM** before saving it in the extension's IndexedDB database. The cache has a **32 MiB audio-size budget**, **256-entry** limit, and **seven-day maximum lifetime**; encryption and storage metadata add overhead. The lookup identifier is a hash of speech inputs; plaintext source text, article URLs, transcription text, and API keys are not stored in that database. Earlier plaintext audio records are purged on upgrade to this format.
 
-Only the current browser session has the encryption key. Closing and reopening the reader can reuse encrypted audio; quitting and restarting Chrome cannot. Expired or no-longer-decryptable ciphertext may remain until a later cache operation removes it or you clear it. Chrome can evict the cache earlier. During use, decrypted audio is held in a bounded memory cache of up to 12 MiB; these limits describe audio caches, not total browser memory.
+Only the current browser session has the encryption key. Closing and reopening the reader can reuse encrypted audio; quitting and restarting Chrome cannot. Expired or no-longer-decryptable ciphertext may remain until a later cache operation removes it or you clear it. Chrome can evict the cache earlier. During playback, Hermes prepares a bounded reserve of upcoming narration, targeting 60–90 seconds with up to 16 future chunks and four concurrent speech requests when catching up. Those prefetched passages are sent to the selected speech connection under the same reading consent, and can incur charges even if you stop before listening to them. Pause stops new requests, though in-flight requests can complete; Stop cancels pending work. During use, decrypted audio is held in a bounded memory cache of up to 12 MiB; these limits describe audio caches, not total browser memory.
 
 The optional local helper separately holds completed audio and timing results in memory, with a 16 MiB audio limit and ten-minute expiry. Speech text and guidance are handled in the helper's memory for requests and cache lookup. Exiting the helper clears its memory. A key supplied through your own `.env.local` file remains in that file until you remove it; the extension cannot delete that file for you. Private environment files are excluded from source and extension packages.
 

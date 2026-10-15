@@ -30,7 +30,7 @@ function wav(byteLength = 8044) {
   return data;
 }
 
-function harness({ withAlignment = false, persistentStore = null, cipher = sessionCipher } = {}) {
+function harness({ withAlignment = false, persistentStore = null, cipher = sessionCipher, clock = null, engine = source, decodeReady = 4 } = {}) {
   const requests = [];
   const players = [];
   const alignments = [];
@@ -44,7 +44,8 @@ function harness({ withAlignment = false, persistentStore = null, cipher = sessi
   class Player {
     constructor(url) {
       this.src = url;
-      this.readyState = 1;
+      this.readyState = decodeReady;
+      this.events = new Map();
       this.duration = 4;
       this.currentTime = 0;
       this.paused = true;
@@ -54,14 +55,17 @@ function harness({ withAlignment = false, persistentStore = null, cipher = sessi
     play() { this.paused = false; this.playCount += 1; return Promise.resolve(); }
     pause() { this.paused = true; }
     removeAttribute() { this.src = ''; }
-    load() {}
-    addEventListener() {}
-    removeEventListener() {}
+    load() { if (!this.src) this.emit('emptied'); }
+    addEventListener(name, fn) { if (!this.events.has(name)) this.events.set(name,new Set()); this.events.get(name).add(fn); }
+    removeEventListener(name, fn) { this.events.get(name)?.delete(fn); }
+    emit(name) { for (const fn of [...(this.events.get(name)||[])]) fn(); }
+    ready() { this.readyState=4; this.emit('loadedmetadata'); this.emit('canplay'); }
   }
   const context = {
     Audio: Player, Blob, DOMException, AbortController, DataView, Uint8Array, ArrayBuffer,
     ...(persistentStore ? { indexedDB: persistentStore, crypto: webcrypto, TextEncoder, TextDecoder } : {}),
-    setTimeout, clearTimeout,
+    setTimeout: clock?.setTimeout || setTimeout, clearTimeout: clock?.clearTimeout || clearTimeout,
+    ...(clock ? {Date: class extends Date {static now(){return clock.now;}}} : {}),
     setInterval: (callback) => { const id = ++timerCounter; timers.set(id, callback); return id; },
     clearInterval: (id) => timers.delete(id),
     navigator: {},
@@ -88,7 +92,7 @@ function harness({ withAlignment = false, persistentStore = null, cipher = sessi
   };
   vm.runInNewContext(timingSource, context);
   if (persistentStore) vm.runInNewContext(cacheSource, context);
-  vm.runInNewContext(source, context);
+  vm.runInNewContext(engine, context);
   const command = (action, extra = {}) => {
     let response;
     listener({ target: 'offscreen', action, ...extra }, {}, (reply) => { response = reply; });
@@ -114,7 +118,7 @@ test('loading is free; speech starts only on Play and obeys concurrency bound', 
   app.load();
   assert.equal(app.requests.length, 0);
   app.command('play');
-  assert.equal(app.requests.length, 2);
+  assert.equal(app.requests.length, 4);
   assert.equal(app.requests[0].body.text, 'Chunk 0 has words.');
   assert.equal(app.requests[0].body.speed, undefined);
   await app.resolve();
@@ -191,7 +195,7 @@ test('replacing a session discards the old response and changing voice restarts 
   await app.resolve(original);
   assert.equal(app.players.length, 0);
   app.command('play');
-  await app.resolve(app.requests.at(-2));
+  await app.resolve(app.requests.findLast(r=>r.body.text==='Chunk 0 has words.'&&!r.options.signal.aborted));
   const player = app.players.at(-1);
   player.currentTime = 2.5;
   app.tick();
@@ -212,9 +216,9 @@ test('far seek cancels unrelated lookahead and prioritizes the requested chunk',
   app.command('play');
   app.command('seek', { wordIndex: 24 });
   await flush();
-  assert.equal(app.requests[2].body.text, 'Chunk 6 has words.');
-  assert.equal(app.requests[3].body.text, 'Chunk 7 has words.');
-  await app.resolve(app.requests[2]);
+  assert.equal(app.requests[4].body.text, 'Chunk 6 has words.');
+  assert.equal(app.requests[5].body.text, 'Chunk 7 has words.');
+  await app.resolve(app.requests[4]);
   assert.equal(app.command('snapshot').wordIndex, 24);
   assert.equal(app.command('snapshot').status, 'playing');
   app.command('stop');
@@ -532,4 +536,62 @@ test('changing generation speed replaces pending audio and resumes at the curren
   assert.equal(app.requests[2].body.generationSpeed, 4);
   app.command('stop');
   await flush();
+});
+
+test('next audio is decoded before the boundary and handed off without a loading state or duplicate request',async()=>{
+ const app=harness();app.load(5);app.command('play');await app.resolve(app.requests[0]);await app.resolve(app.requests[1]);
+ const first=app.players.find(p=>!p.paused),warm=app.players.find(p=>p!==first&&p.src);assert.ok(warm);assert.equal(warm.playCount,0);assert.equal(warm.preload,'auto');
+ const count=app.requests.length,states=app.messages.length;first.onended();await flush();
+ assert.equal(warm.playCount,1);assert.equal(app.command('snapshot').wordIndex,4);assert.equal(app.players.filter(p=>!p.paused).length,1);
+ assert.equal(app.messages.slice(states).some(m=>m.state.status==='loading'),false);assert.equal(app.requests.length,count);app.command('stop');
+});
+
+test('prefetch refills past three chunks while current audio is still playing, with bounded concurrency',async()=>{
+ const app=harness();app.load(80);app.command('play');let peak=0;
+ for(let i=0;i<18;i++){const pending=app.requests.filter(r=>!r.done&&!r.options.signal.aborted);peak=Math.max(peak,pending.length);if(!pending.length)break;pending[0].done=true;await app.resolve(pending[0]);}
+ assert.ok(app.command('snapshot').bufferedSeconds>=60);assert.ok(app.requests.length>4);assert.ok(peak<=4);assert.ok(app.requests.length<=17);assert.equal(app.command('snapshot').wordIndex,0);
+ const count=app.requests.length;app.command('pause');await flush();assert.equal(app.requests.length,count);app.command('stop');
+});
+
+test('resume restarts queued speech preparation and stop releases the preloaded player',async()=>{
+ const app=harness();app.load(30);app.command('play');await app.resolve(app.requests[0]);app.command('pause');
+ for(const request of app.requests.slice(1))await app.resolve(request);
+ const before=app.requests.length;app.command('play');await flush();assert.ok(app.requests.length>before);app.command('stop');await flush();assert.ok(app.players.every(p=>p.paused&&!p.src));
+});
+
+test('a decoding preloaded passage is cancelled by seek and cannot start late',async()=>{
+ const app=harness({decodeReady:1});app.load(30);app.command('play');await app.resolve(app.requests[0]);await app.resolve(app.requests[1]);
+ const warm=app.players.find(p=>p.paused&&p.src);assert.ok(warm);app.players.find(p=>!p.paused).onended();await flush();
+ app.command('seek',{wordIndex:100});warm.ready();await flush();assert.equal(warm.playCount,0);assert.equal(warm.src,'');assert.equal(app.command('snapshot').wordIndex,100);app.command('stop');await flush();
+});
+
+test('memory eviction does not repeatedly regenerate the same oversized lookahead',async()=>{
+ const app=harness();app.load(8);app.command('play');await app.resolve(app.requests[0],wav(7*1024*1024));await app.resolve(app.requests[1],wav(7*1024*1024));
+ for(let i=0;i<5;i++)app.command('settings',{settings:{speed:2+i*.05}});
+ assert.equal(app.requests.filter(r=>r.body.text==='Chunk 1 has words.').length,1);app.command('stop');await flush();
+});
+
+test('failed speculative speech stays failed until played instead of retrying on every refill',async()=>{
+ const app=harness();app.load(10);app.command('play');await app.resolve(app.requests[0]);app.requests[1].reject(Error('Rate limited'));await flush();
+ for(let i=0;i<5;i++)app.command('settings',{settings:{speed:2+i*.05}});
+ assert.equal(app.requests.filter(r=>r.body.text==='Chunk 1 has words.').length,1);app.players.find(p=>!p.paused).onended();await flush();assert.equal(app.command('snapshot').status,'error');app.command('stop');
+});
+
+test('long narration absorbs a 25-second network slowdown after two minutes without a mid-article stall',async t=>{
+ const callbacks=new Map();let id=0;const clock={now:0,setTimeout:(fn,ms)=>{callbacks.set(++id,{fn,at:clock.now+ms});return id;},clearTimeout:id=>callbacks.delete(id)};
+ const app=harness({clock,engine:process.env.HERMES_BASELINE?await readFile(process.env.HERMES_BASELINE,'utf8'):source});app.load(90);app.command('settings',{settings:{speed:2.3,generationSpeed:2.3}});app.command('play');
+ let started=false,stalled=0,peak=0,transitions=0,previous=-1;
+ for(;clock.now<450000;clock.now+=100){
+  for(const request of app.requests){if(request.due===undefined)request.due=clock.now+(clock.now>=120000&&clock.now<145000?25000:2500);}
+  for(const request of app.requests){if(!request.done&&!request.options.signal.aborted&&clock.now>=request.due){request.done=true;await app.resolve(request);}}
+  peak=Math.max(peak,app.requests.filter(r=>!r.done&&!r.options.signal.aborted).length);
+  for(const [key,job] of callbacks)if(job.at<=clock.now){callbacks.delete(key);job.fn();}
+  const state=app.command('snapshot');if(state.status==='ended')break;
+  if(state.status==='playing'){started=true;const player=app.players.find(p=>!p.paused);assert.ok(player);player.currentTime+=.1*player.playbackRate;if(player.currentTime>=4){player.currentTime=4;player.onended();await flush();}}
+  else if(started&&state.status==='loading')stalled+=100;
+  app.tick();if(state.wordIndex!==previous&&state.wordIndex%4===0){previous=state.wordIndex;transitions++;}await flush();
+ }
+ const result={simulatedSeconds:clock.now/1000,stallSeconds:stalled/1000,requests:app.requests.length,peakRequests:peak,transitions,final:app.command('snapshot').status};
+ t.diagnostic(JSON.stringify(result));app.command('stop');await flush();
+ assert.equal(result.final,'ended');assert.equal(result.requests,90);assert.ok(peak<=4);assert.equal(stalled,0);
 });
