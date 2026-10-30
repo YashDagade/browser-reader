@@ -1,6 +1,6 @@
 # Chrome Web Store submission
 
-**Target version: 0.11.0. Status: prepared, not yet submitted.** This API-only update improves continuous listening with an adaptive audio reserve, preloaded chunk transitions, and immediate queue refill after pause/resume. It retains original PDF pages, local pen annotations, and finer speed controls. It preserves the 2.3× narration default and optional encrypted credential storage and replaces the 0.4.0 package previously submitted on September 20, 2026. The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. Final submission and approval must be verified in the dashboard. The publisher's account address is intentionally absent from public source.
+**Target version: 0.11.1. Status: prepared, not yet submitted.** This API-only update fixes Contrary Research article extraction by distinguishing layout sizing classes from navigation. It retains adaptive audio buffering and preloaded chunk transitions. It retains original PDF pages, local pen annotations, and finer speed controls. It preserves the 2.3× narration default and optional encrypted credential storage and replaces the 0.4.0 package previously submitted on September 20, 2026. The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. Final submission and approval must be verified in the dashboard. The publisher's account address is intentionally absent from public source.
 
 ## Listing fields
 

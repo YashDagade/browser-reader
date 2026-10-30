@@ -92,6 +92,44 @@ test('finds a personal essay in div layouts and excludes a large linked menu', (
   dom.window.close();
 });
 
+test('Contrary report layout sizing does not exclude the article as navigation', () => {
+  const dom = fixture(`<div class="flex flex-1 flex-col min-h-calc-navbar">
+    <nav>Companies Reports</nav><aside>Thesis Product Summary</aside>
+    <article class="space-y-10 pt-10 md:space-y-6"><div id="thesis"><h2>Thesis</h2>
+      <p>A detailed report begins with the investment thesis. Its <a href="/source">inline sources</a> remain part of the sentence and should retain exact word highlighting.</p></div>
+      <div id="product"><h2>Product</h2><p>The product section follows the thesis in the original reading order.</p></div>
+      <div id="article-newsletter"><p>Weekly Newsletter Subscribe to the Research Rundown</p></div>
+      <div id="summary"><h2>Summary</h2><p>The summary at the end must be read as well.</p></div>
+    </article><footer>Copyright and footer links.</footer></div>`);
+  const before = dom.window.document.body.innerHTML;
+  const result = dom.window.ReaderExtract.extract();
+  assert.match(texts(result), /^Thesis A detailed report/);
+  assert.match(texts(result), /Its inline sources remain/);
+  assert.match(texts(result), /Product The product section/);
+  assert.match(texts(result), /Summary The summary at the end must be read as well\.$/);
+  assert.doesNotMatch(texts(result), /Companies|Reports|Newsletter|Subscribe|Copyright/);
+  assert.ok(result.chunks.length > 1);
+  for (const word of result.words) assert.equal(word.range.toString(), word.text);
+  assert.equal(dom.window.document.body.innerHTML, before);
+  dom.window.close();
+});
+
+test('responsive size utilities can name surrounding UI without hiding prose', () => {
+  for (const classes of ['min-h-calc-navbar', 'md:min-h-calc-navbar', 'lg:!max-w-sidebar', 'w-[calc(100%-var(--sidebar-width))]', 'h-[var(--navbar-height)]']) {
+    const dom = fixture(`<div class="${classes}"><article><p>Visible prose.</p></article></div>`);
+    assert.equal(texts(dom.window.ReaderExtract.extract()), 'Visible prose.', classes);
+    dom.window.close();
+  }
+});
+
+test('size utilities never exempt real navigation, signup, paywall, or hidden ancestors', () => {
+  for (const attributes of ['class="min-h-calc-navbar navbar"', 'id="navbar" class="min-h-calc-navbar"', 'class="min-h-calc-navbar newsletter"', 'class="min-h-calc-navbar paywall"', 'role="navigation" class="min-h-calc-navbar"', 'hidden class="min-h-calc-navbar"', 'aria-hidden="true" class="min-h-calc-navbar"', 'inert class="min-h-calc-navbar"', 'style="display:none" class="min-h-calc-navbar"']) {
+    const dom = fixture(`<main><p>Visible prose.</p><div ${attributes}><article><p>Excluded text.</p></article></div></main>`);
+    assert.equal(texts(dom.window.ReaderExtract.extract()), 'Visible prose.', attributes);
+    dom.window.close();
+  }
+});
+
 test('Substack newsletter-post is prose, with title and body but no author UI or footer', () => {
   const dom = fixture(`<div role="main"><article class="typography newsletter-post post">
     <div class="post-header"><h1>A study of comic timing</h1><h3 class="subtitle">Two panels, one idea</h3><div>AUTHOR NAME AND DATE<button>Share</button></div></div>

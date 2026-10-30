@@ -4,6 +4,10 @@
   const EXCLUDED_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'NAV', 'FOOTER', 'ASIDE', 'BUTTON', 'FORM', 'INPUT', 'SELECT', 'TEXTAREA', 'OPTION', 'FIGCAPTION', 'IMG', 'SVG', 'CANVAS', 'IFRAME', 'VIDEO', 'AUDIO', 'DIALOG']);
   const BLOCK_TAGS = new Set(['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'BLOCKQUOTE', 'PRE', 'TD', 'TH', 'DT', 'DD', 'DIV', 'SECTION', 'ARTICLE', 'MAIN']);
   const NOISE = /(?:^|[\s_-])(?:ads?|advert(?:isement|ising)?|adverts?|sponsored|cookie(?:s|banner|consent)?|consent|newsletter|subscribe|subscription|navigation|navbar|sidebar|social|share(?:buttons|tools)?|sharing|related(?:posts|articles)?|recommended|recommendations|comments?|disqus|pagination|paywall|modal|popup|pop-up|toc|table-of-contents|chapter-rail|sr-only|visually-hidden)(?:$|[\s_-])/i;
+  // Size utilities can reference surrounding UI: min-h-calc-navbar describes
+  // the article's height, not a navbar. Ignore these class tokens only when
+  // identifying noise; IDs, roles, visibility, and other classes still apply.
+  const SIZE_UTILITY = /^(?:[\w-]+:)*!?(?:(?:min|max)-)?[wh]-.+/;
   const CONTENT = /(?:article|essay|post|entry|story)[-_ ]?(?:body|content|text)|(?:^|\s)prose(?:$|\s)/i;
   const SENTENCE_END = /[.!?。！？][”’"')\]]*$/u;
 
@@ -87,7 +91,7 @@
       // Substack's actual article is named newsletter-post. Exempt that exact
       // class on articles, without weakening signup, paywall, or ancestor rules.
       const classes = typeof element.className === 'string' ? element.className.split(/\s+/).filter(name =>
-        !(element.tagName === 'ARTICLE' && name === 'newsletter-post')).join(' ') : '';
+        !SIZE_UTILITY.test(name) && !(element.tagName === 'ARTICLE' && name === 'newsletter-post')).join(' ') : '';
       const identity = `${element.id || ''} ${classes}`;
       const role = element.getAttribute('role');
       const editable = element.hasAttribute('contenteditable') && element.getAttribute('contenteditable') !== 'false';
