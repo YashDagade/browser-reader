@@ -48,7 +48,7 @@ Designed for desktop Chrome. Chrome internal pages and the Web Store are unsuppo
 
 ## Privacy practices fields
 
-**Single purpose:** Read the webpage text, PDF text, selection, or pasted passage chosen by the user aloud, with playback-speed controls, highlighting, and navigation through the same text.
+**Single purpose:** Read the webpage text, PDF text, selection, or pasted passage chosen by the user aloud, with playback-speed controls, highlighting, navigation, and local PDF annotations for following and marking the same document.
 
 Use the dashboard's actual field labels. These declarations describe data handled by the extension, including local processing and third-party API requests; they must not be replaced by “no data collected” merely because the developer has no server. Google's [User Data FAQ](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq) explicitly includes local handling, and its [privacy-field guide](https://developer.chrome.com/docs/webstore/cws-dashboard-privacy) requires consistency with the privacy policy.
 
@@ -59,7 +59,7 @@ Use the dashboard's actual field labels. These declarations describe data handle
 | Personal communications | Disclose as incidental user-selected content. Hermes can narrate messages or other communications that the user selects or pastes; it has no mail integration or background inbox access. |
 | Web history / browsing activity | Disclose narrowly: current document URL and title are held temporarily for the reading session. No history log is collected, and these fields are not sent as API metadata. |
 | Personally identifiable, health, financial/payment, or location information | Disclose that these may occur inside text the user chooses to narrate. Hermes has no separate collection or extraction of these categories. Do not certify that they can never be handled; map incidental content to the applicable dashboard categories before submitting. |
-| User activity | Playback controls are handled locally to operate the reader; no clickstream, mouse tracking, or usage analytics is collected. If the dashboard's definition includes this functional interaction, explain that narrow scope. |
+| User activity | Disclosed for functional input, including PDF pen coordinates saved locally. Playback controls operate locally; no general clickstream, keystroke log, or usage analytics is collected. Pen marks are never sent to OpenAI. |
 
 **Limited use certifications:** The implementation does not sell user data; does not use or transfer it for unrelated purposes, advertising, or profiling; and does not use it for creditworthiness or lending decisions. Its OpenAI transfers provide the reading features the user explicitly enables. Select certifications only after confirming the release still matches [PRIVACY.md](../PRIVACY.md).
 

@@ -1,8 +1,10 @@
 # Hermes privacy policy
 
-Updated October 15, 2026. Applies to Hermes 0.11.0 and later unless replaced by a newer policy.
+Updated November 21, 2026. Applies to Hermes 0.11.0 and later unless replaced by a newer policy.
 
 Hermes reads webpage articles, selected passages, pasted text, and selectable PDF text aloud. All narration uses OpenAI voices with your own API key. There is no browser or on-device voice fallback. The extension sends no reading content or credentials to its developer. There is no Hermes account, developer-operated data service, analytics, advertising, or sale of user data.
+
+The Chrome Web Store's user-activity disclosure covers functional input such as PDF pen coordinates saved on your device. Hermes does not collect a browsing clickstream, general keystroke log, or usage analytics. Stored pen marks are described below and never leave your device unless you export and share an annotated PDF yourself.
 
 ## What Hermes handles
 
