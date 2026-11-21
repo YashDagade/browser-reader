@@ -4,6 +4,8 @@
 
 Click **Start reading**, follow the highlighted words, and change speed from **0.75× to 7×**. Connect your own OpenAI API key directly from Chrome. All narration uses OpenAI; there is no browser or system voice fallback. No Node, hosted backend, or build step is needed.
 
+**Hermes is free and open source.** There is no Hermes account, password, or subscription. Each person supplies their own OpenAI API key and pays OpenAI for their own speech usage; no shared or developer-funded API key is included.
+
 - A readable floating player with play, pause, stop, passage skipping, and a position slider.
 - Drag it anywhere, drop it near an edge to dock, or collapse it to a small movable button while listening.
 - Double-click a word to jump there, follow along with optional auto-scroll, or read selected/pasted text. Single clicks keep their normal behavior.
@@ -13,7 +15,7 @@ Click **Start reading**, follow the highlighted words, and change speed from **0
 
 ## Install and listen
 
-Requires **desktop Chrome 116+**. Version **0.11.1 fixes Contrary Research reports being mistaken for navigation**, so the full article can be read and highlighted. Adaptive audio buffering and preloaded transitions remain available. PDF pen annotations, local saving, annotated-copy download, readable titles, and the centered toolbar remain available. The 0.05× speed shortcuts and playback up to 7× remain available. Your OpenAI model, voice, 2.3× narration default, and optional encrypted credential storage are preserved. All narration requires OpenAI. The previous 0.4.0 package was submitted for review; this update has not been submitted. Install the unpacked extension below. Chrome extensions do not run on iPhone or iPad, even in desktop mode; a Safari version would require a separate port. See [Google's device compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en).
+Requires **desktop Chrome 116+**. Version **0.11.1 fixes Contrary Research reports being mistaken for navigation**, so the full article can be read and highlighted. Adaptive audio buffering and preloaded transitions remain available. PDF pen annotations, local saving, annotated-copy download, readable titles, and the centered toolbar remain available. The 0.05× speed shortcuts and playback up to 7× remain available. Your OpenAI model, voice, 2.3× narration default, and optional encrypted credential storage are preserved. All narration requires OpenAI. The [Chrome Web Store listing](https://chromewebstore.google.com/detail/hermes-%C2%B7-article-reader/gfhgncidbgdpeoniaenjdkoepbneldjp) currently offers the older **0.4.0** release (checked November 21, 2026). The **0.11.1** update is prepared but has not yet been submitted. For the latest features, install the unpacked extension below. Chrome extensions do not run on iPhone or iPad, even in desktop mode; a Safari version would require a separate port. See [Google's device compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en).
 
 1. [Download `hermes-extension.zip`](https://github.com/YashDagade/browser-reader/releases/latest/download/hermes-extension.zip) and extract it to a folder you will keep.
 2. Open `chrome://extensions` and enable **Developer mode**.

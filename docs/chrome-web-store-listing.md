@@ -1,6 +1,6 @@
 # Chrome Web Store submission
 
-**Target version: 0.11.1. Status: prepared, not yet submitted.** This API-only update fixes Contrary Research article extraction by distinguishing layout sizing classes from navigation. It retains adaptive audio buffering and preloaded chunk transitions. It retains original PDF pages, local pen annotations, and finer speed controls. It preserves the 2.3× narration default and optional encrypted credential storage and replaces the 0.4.0 package previously submitted on September 20, 2026. The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. Final submission and approval must be verified in the dashboard. The publisher's account address is intentionally absent from public source.
+**Target version: 0.11.1. Status: prepared, not yet submitted.** This API-only update fixes Contrary Research article extraction by distinguishing layout sizing classes from navigation. It retains adaptive audio buffering and preloaded chunk transitions. It retains original PDF pages, local pen annotations, and finer speed controls. It preserves the 2.3× narration default and optional encrypted credential storage and will replace the **0.4.0** package currently available on the [public store listing](https://chromewebstore.google.com/detail/hermes-%C2%B7-article-reader/gfhgncidbgdpeoniaenjdkoepbneldjp), which reports publication on September 22, 2026 (verified November 21, 2026). The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. Final submission and approval must be verified in the dashboard. The publisher's account address is intentionally absent from public source.
 
 ## Listing fields
 
@@ -21,7 +21,7 @@ The privacy-policy URL must be publicly readable after the policy is pushed. Do 
 
 Hermes reads articles, essays, selected passages, and pasted text aloud without taking you away from the webpage.
 
-Connect your own OpenAI API key for expressive AI narration. All voices use OpenAI, and an API connection is required. There is no system-voice fallback. Direct OpenAI mode works from Chrome with no Node installation or hosted backend. OpenAI usage is billed to your own API project.
+Hermes is free and open source, with no Hermes account, password, or subscription. Connect your own OpenAI API key for expressive AI narration. All voices use OpenAI, and an API connection is required. There is no system-voice fallback. Direct OpenAI mode works from Chrome with no Node installation or hosted backend. OpenAI usage is billed to your own API project; no shared API key or free API credit is included.
 
 Reading controls:
 
@@ -108,6 +108,6 @@ The screenshot shows the earlier v0.4.0 player and word highlighting; v0.5.0 use
 
 ## Submission handoff
 
-Use the store ZIP with `manifest.json` at its root, not the general unpacked-install ZIP that contains an `extension` folder. Confirm its version is 0.11.0 and it contains only extension assets; no environment files, API keys, local helper, test credentials, or private material. Complete the store's listing, privacy, distribution, and reviewer fields in the publisher dashboard, then verify the resulting status there. Uploading a ZIP alone is not submission or approval.
+Use the store ZIP with `manifest.json` at its root, not the general unpacked-install ZIP that contains an `extension` folder. Confirm its version is 0.11.1 and it contains only extension assets; no environment files, API keys, local helper, test credentials, or private material. Complete the store's listing, privacy, distribution, and reviewer fields in the publisher dashboard, then verify the resulting status there. Uploading a ZIP alone is not submission or approval.
 
 This is a desktop Chrome release. Google's [compatibility guidance](https://support.google.com/chrome_webstore/answer/1698338?hl=en) says mobile devices cannot install Chrome extensions even in desktop mode. iPhone/iPad support would require a separate app or Safari extension port and its own distribution process.
