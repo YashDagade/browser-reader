@@ -1,6 +1,13 @@
 # Chrome Web Store submission
 
-**Target version: 0.11.1. Status: prepared, not yet submitted.** This API-only update fixes Contrary Research article extraction by distinguishing layout sizing classes from navigation. It retains adaptive audio buffering and preloaded chunk transitions. It retains original PDF pages, local pen annotations, and finer speed controls. It preserves the 2.3× narration default and optional encrypted credential storage and will replace the **0.4.0** package currently available on the [public store listing](https://chromewebstore.google.com/detail/hermes-%C2%B7-article-reader/gfhgncidbgdpeoniaenjdkoepbneldjp), which reports publication on September 22, 2026 (verified November 21, 2026). The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. Final submission and approval must be verified in the dashboard. The publisher's account address is intentionally absent from public source.
+**Submitted version: 0.11.1. Status: submitted for review on November 21, 2026; approval pending.** This API-only update fixes Contrary Research article extraction by distinguishing layout sizing classes from navigation. It retains adaptive audio buffering and preloaded chunk transitions. It retains original PDF pages, local pen annotations, and finer speed controls. It preserves the 2.3× narration default and optional encrypted credential storage and will replace the **0.4.0** package currently available on the [public store listing](https://chromewebstore.google.com/detail/hermes-%C2%B7-article-reader/gfhgncidbgdpeoniaenjdkoepbneldjp), which reports publication on September 22, 2026 (verified November 21, 2026). The item ID is `gfhgncidbgdpeoniaenjdkoepbneldjp`. The dashboard confirmed "Your extension was submitted for review." Automatic publication after approval is enabled. Distribution is public, free of charge, and all regions; approval and availability of 0.11.1 have not yet been observed. The publisher's account address is intentionally absent from public source.
+
+## Submitted package
+
+- Archive: `output/hermes-chrome-web-store.zip` (root manifest version `0.11.1`, 229 files, 2,560,287 bytes).
+- SHA-256: `4798a41b08d3d272e442203a9b0ddc1ebed62a0ed792e8e5766a0b10da99a2f2`.
+- Validation: 203 tests passed, syntax/manifest checks passed, and tracked-source plus package-input credential scans passed. No runtime source changed during submission.
+- Store description, privacy disclosures, and test instructions were updated for API-only narration, local PDF annotations, and optional encrypted credentials. No developer key or test account was supplied.
 
 ## Listing fields
 
@@ -81,6 +88,10 @@ Use the dashboard's actual field labels. These declarations describe data handle
 ## Reviewer instructions
 
 Hermes has no login or subscription. Audio playback requires a reviewer-owned OpenAI API key with speech access and available API credit; no developer credential is supplied.
+
+The dashboard's 500-character instructions field contains:
+
+> No Hermes login. A reviewer-owned OpenAI key with speech access and API credit is required. Options > Direct from Chrome > enter key > consent > Save connection; grant API permission. Open an article, click Hermes, Start reading. Test speed, pause, seeking, PDFs and pen. No developer key is supplied. All narration uses OpenAI; no system voice. Full steps: https://github.com/YashDagade/browser-reader/blob/main/docs/chrome-web-store-listing.md
 
 1. Install the extension in desktop Chrome and open a public article. Click Hermes. Before API setup, a **Connect OpenAI** prompt should appear; it opens Options. No system voice or speech request should start.
 2. In Options, select **Direct from Chrome**, supply a reviewer-owned OpenAI API key, read the disclosure, check consent, and click **Save connection**. Grant the optional OpenAI host permission. Leave **Remember on this device** unchecked to keep the key session-only, or enable it to save an encrypted copy that restores after Chrome restarts. The decryption key also lives in the same Chrome profile.
